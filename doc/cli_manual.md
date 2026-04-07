@@ -36,7 +36,16 @@ console-cli config port {port_number} [--baudrate <rate>] [--databits <bits>] [-
 | --flowcontrol| Optional. Sets flow control. Supported values: none, rtscts, xonxoff. |
 
 ### **Default**
-If a parameter is not specified, its current value is retained.
+For a new entry, if a parameter is not specified, the default value is used.
+For an existing entry, if a parameter is not specified, its current value is retained.
+
+| Parameter | Default Value |
+|---|---|
+| --baudrate | 115200 |
+| --databits | 8 |
+| --parity | none |
+| --stopbits | 1 |
+| --flowcontrol | none |
 
 ### **Usage Guidelines**
 Use this command to modify the low-level serial communication parameters for a port. Changes are applied to the running configuration and applied dynamically by restarting the affected serial port service. To persist any changes, use the `config savecommand.
@@ -75,7 +84,14 @@ console-cli config operation {port_number} [--mode <mode>] [--max-clients <count
 | **--label**| Optional. Sets a user-friendly nickname for the connected device. |
 
 ### **Default**
-If a parameter is not specified, its current value is retained.
+For a new entry, if a parameter is not specified, the default value is used.
+For an existing entry, if a parameter is not specified, its current value is retained.
+
+| Parameter | Default Value |
+|---|---|
+| --mode | shared |
+| --idle-timeout | 600 |
+| --label | none |
 
 ### **Usage Guidelines**
 Use this command to control how users interact with a serial line, such as setting the write-access mode and connection limits. Changes are applied to the running configuration and applied dynamically.
@@ -132,7 +148,7 @@ Configuration saved successfully.
 This command creates a new user or modifies an existing user's properties.
 
 ```bash
-console-cli config user add <username> [--role <role>] [--groups <group1,group2,...>]
+console-cli config user add <username> --password <password> [--role <role>] [--groups <group1,group2,...>]
 ```
 
 ### **Parameters**
@@ -141,21 +157,36 @@ console-cli config user add <username> [--role <role>] [--groups <group1,group2,
 | **username** | The name of the user to create or modify. |
 | **--role** | Optional. Assigns a specific role to the user (`none`, `operator`, `console_user`, `admin`). This overrides any role inherited from a group. |
 | **--groups** | Optional. A comma-separated list of groups to which the user belongs. |
+| **--password** | Required. Sets or updates the user password (local Linux account only). |
+
+### **Default**
+For a new entry, if a parameter is not specified, the default value is used.
+For an existing entry, if a parameter is not specified, its current value is retained.
+
+| Parameter | Default Value |
+|---|---|
+| --role | none |
+| --groups | Group_Default |
 
 ### **Usage Guidelines**
 - If the user does not exist, this command creates them.
-- If no `--role` option is provided, the default role is `none`.
-- If no `--groups` option is provided, the user is assigned to the default group (`Group_Default`) and will inherit their role from that group.
 - If the user exists, this command modifies their properties.
+- `--password` is required.
 - Changes are applied to the running configuration. Use `config save` to persist them.
+
+| Feature | Usernames | Passwords |
+|---|---|---|
+| Max Length | 32 characters  | 128 characters |
+| Case Sensitivity | Case-sensitive  | Strictly case-sensitive |
+| Starts With | Must be a letter or underscore | Can be anything |
 
 ### **Example**
 ```bash
 # Create a new user 'tech1' with the operator role, assigned to 'Group_A'
-> console-cli config user add tech1 --role operator --groups Group_A
+> console-cli config user add tech1 --role operator --groups Group_A --password tech1
 
 # Create a new user 'guest' with default settings
-> console-cli config user add guest
+> console-cli config user add guest --password guest
 
 # Modify user 'tech1' to also be in 'Group_B'
 > console-cli config user add tech1 --groups Group_A,Group_B
