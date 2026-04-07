@@ -1,0 +1,11 @@
+%YAML 1.1
+---
+define: &banner \r\nser2net port \p device \d [\B]\r\n\r\n
+connection: &com19_telnet
+  accepter: telnet,50019
+  enable: on
+  options:
+    banner: *banner
+    max-connections: 4
+    kickolduser: false
+  connector: serialdev,/dev/ttyUSB18,115200n81,local

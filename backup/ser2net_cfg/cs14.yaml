@@ -1,0 +1,11 @@
+%YAML 1.1
+---
+define: &banner \r\nser2net port \p device \d [\B]\r\n\r\n
+connection: &com14_telnet
+  accepter: telnet,50014
+  enable: on
+  options:
+    banner: *banner
+    max-connections: 4
+    kickolduser: false
+  connector: serialdev,/dev/ttyUSB13,115200n81,local
