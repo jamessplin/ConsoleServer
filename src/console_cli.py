@@ -473,7 +473,7 @@ def user():
 @click.argument('username', type=str)
 @click.option('--role', type=click.Choice(['operator', 'console_user', 'admin', 'none']), help='Assigns a specific role to the user.')
 @click.option('--groups', type=str, help='Comma-separated list of groups.')
-@click.option('--password', type=str, required=True, help='Set or update the user password (local Linux account only).')
+@click.option('--password', type=str, help='Set or update the user password (local Linux account only).')
 def user_add(username, role, groups, password):
     """Creates a new user or modifies an existing user's properties."""
 
