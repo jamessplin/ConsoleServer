@@ -12,7 +12,7 @@ Before you begin, install the necessary packages on your Debian-based system (e.
 
 ```bash
 sudo apt-get update
-sudo apt-get install python3-click python3-serial python3-passlib ser2net
+sudo apt-get install python3-click python3-serial python3-passlib ser2net make
 ```
 
 ### 1.2 Configure the `seriald` Server

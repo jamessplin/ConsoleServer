@@ -94,6 +94,9 @@ main() {
   echo "Setting up SSH dispatch and secondary sshd..."
   sudo /usr/local/bin/setup_ssh_dispatch.py -s 20001 -e 20024 \
     --address-family inet \
+    --port22-dualstack \
+    --max-ports-per-sshd 16 \
+    --split-at-port 20012 \
     --enable-second-sshd \
     --second-sshd-config /etc/ssh/sshd_config_seriald2 \
     --second-sshd-service ssh-seriald2.service
