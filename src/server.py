@@ -29,18 +29,18 @@ ROLE_PRIORITY = [
     "admin",
     "console_user",
     "operator",
-    "observer"
+    "none"
 ]
 
 class UserRole(Enum):
     ADMIN = "admin"
     CONSOLE_USER = "console_user"
     OPERATOR = "operator"
-    OBSERVER = "observer"
+    NONE = "none"
 
 # Define default values for new users and groups
 USER_DEFAULT_GROUP = ["Group_Default"]  # default to access to all ports, can be overridden
-USER_DEFAULT_ROLE = None
+USER_DEFAULT_ROLE = UserRole.NONE.value
 GROUP_DEFAULT_PORTS = list(range(1, 25))  # default to access to all ports, can be overridden
 GROUP_DEFAULT_ROLE = UserRole.CONSOLE_USER.value
 
@@ -59,7 +59,8 @@ def get_effective_role(username: str, config) -> Optional[str]:
     if not user:
         return None
     user_role = user.get("role")
-    if user_role:
+    # "none" means no user-specific override; inherit from group role.
+    if user_role and user_role != UserRole.NONE.value:
         return user_role
     # If user role is empty/null, check group roles
     user_groups = user.get("groups", [])

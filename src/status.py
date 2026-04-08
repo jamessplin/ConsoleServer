@@ -192,7 +192,7 @@ async def main():
     sp_config_group = subparsers.add_parser("config-group", help="create or modify a group")
     sp_config_group.add_argument("groupname", type=str, help="the group name to configure")
     sp_config_group.add_argument("--ports", type=str, help="comma-separated list of port numbers")
-    sp_config_group.add_argument("--role", choices=['operator', 'console_user'], help="assigns a default role to the group")
+    sp_config_group.add_argument("--role", choices=['operator', 'console_user', 'admin', 'none'], help="assigns a default role to the group")
 
     sp_config_no_group = subparsers.add_parser("config-no-group", help="delete a group")
     sp_config_no_group.add_argument("groupname", type=str, help="the group name to delete")
@@ -278,10 +278,7 @@ async def main():
         msg = {"op": "config_user", "username": args.username}
         print(f"Configuring user: {args}")
         if args.role is not None:
-            if args.role.lower() == 'none':
-                msg["role"] = None
-            else:
-                msg["role"] = args.role
+            msg["role"] = args.role
         if args.groups is not None:
             msg["groups"] = args.groups.split(',')
         if args.password is not None:
@@ -344,7 +341,7 @@ async def main():
             sys.exit(1)
         config = msg.get("config", {})
         # Compute effective role for the user (inline logic from server.py)
-        ROLE_PRIORITY = ["admin", "console_user", "operator", "observer"]
+        ROLE_PRIORITY = ["admin", "console_user", "operator", "none"]
         def get_effective_role(username, config):
             users = config.get("users", {})
             groups = config.get("groups", {})
@@ -352,7 +349,8 @@ async def main():
             if not user:
                 return None
             user_role = user.get("role")
-            if user_role:
+            # "none" means no user-specific override; inherit from groups.
+            if user_role and user_role != "none":
                 return user_role
             user_groups = user.get("groups", [])
             group_roles = [groups[g].get("role") for g in user_groups if g in groups and groups[g].get("role")]
