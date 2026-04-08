@@ -169,9 +169,8 @@ For an existing entry, if a parameter is not specified, its current value is ret
 | --groups | Group_Default |
 
 ### **Usage Guidelines**
-- If the user does not exist, this command creates them.
+- If the user does not exist, this command creates them, and `--password` is required.
 - If the user exists, this command modifies their properties.
-- `--password` is required.
 - Changes are applied to the running configuration. Use `config save` to persist them.
 
 | Feature | Usernames | Passwords |
@@ -231,21 +230,33 @@ console-cli config group add <groupname> [--ports <port1,port2,...>] [--role <ro
 | **--ports** | Optional. A comma-separated list of serial port numbers to include in this group. |
 | **--role** | Optional. Assigns a default role to the group (`operator`, `console_user`, `admin`). |
 
+### **Default**
+For a new entry, if a parameter is not specified, the default value is used.
+For an existing entry, if a parameter is not specified, its current value is retained.
+
+| Parameter | Default Value |
+|---|---|
+| --ports | all |
+| --role | console_user |
+
 ### **Usage Guidelines**
 - If the group does not exist, this command creates it.
-- If no `--ports` option is provided, the default ports are all ports.
-- If no `--role` option is provided, the default role is `console_user`.
 - If the group exists, this command modifies its properties.
 - Port ranges are supported (e.g., `1-5,8,10-12`).
 - Changes are applied to the running configuration. Use `config save` to persist them.
+
+| Feature | Group Names |
+|---|---|
+| Max Length | 32 characters |
+| Case Sensitivity | Case-sensitive |
 
 ### **Example**
 ```bash
 # Create 'Group_C' with ports 9-12 and an operator role
 > console-cli config group add Group_C --ports 9-12 --role operator
 
-# Create a group 'ReadOnly' with default settings (console_user role, all ports)
-> console-cli config group add ReadOnly
+# Create a group 'Default_G' with default settings (console_user role, all ports)
+> console-cli config group add Default_G
 
 # Add port 13 to 'Group_C'
 > console-cli config group add Group_C --ports 9-12,13
