@@ -68,6 +68,28 @@ remove_installed() {
   echo "Removal complete."
 }
 
+install_dependencies() {
+  local packages=("python3-click" "python3-serial" "python3-passlib" "ser2net" "make")
+  local missing_packages=()
+
+  echo "Checking system dependencies..."
+  for pkg in "${packages[@]}"; do
+    if ! dpkg -l | grep -E "^ii\s+${pkg}\s" > /dev/null 2>&1; then
+      missing_packages+=("$pkg")
+    fi
+  done
+
+  if [[ ${#missing_packages[@]} -eq 0 ]]; then
+    echo "All dependencies already installed."
+    return 0
+  fi
+
+  echo "Installing missing dependencies: ${missing_packages[*]}"
+  apt-get update
+  apt-get install -y "${missing_packages[@]}"
+  echo "Dependencies installed successfully."
+}
+
 main() {
   if [[ $EUID -ne 0 ]]; then
     echo "Please run as root (sudo)." >&2
@@ -78,6 +100,8 @@ main() {
     remove_installed
     exit 0
   fi
+
+  install_dependencies
 
 
   install_file "$CLIENT_SRC" "$CLIENT_DST"
