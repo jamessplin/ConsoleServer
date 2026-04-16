@@ -111,7 +111,8 @@ def build_config(
         lines.append(f"AddressFamily {address_family}")
     if include_ports:
         if include_port22 and include_port22_port:
-            lines.append("Port 22")
+            lines.append("ListenAddress 0.0.0.0:22")
+            lines.append("ListenAddress [::]:22")
         for p in ports:
             if serial_ports_ipv4_only:
                 lines.append(f"ListenAddress 0.0.0.0:{p}")
@@ -576,7 +577,6 @@ def main():
         if args.port22_dualstack:
             # Keep port 22 behavior from /etc/ssh/sshd_config and only add IPv4 serial listeners in the drop-in.
             primary_address_family = "any"
-            primary_include_port22_port = False
             primary_serial_ports_ipv4_only = True
         # Install dispatch wrapper
         install_dispatch_wrapper(repo_dir, dry_run=args.dry_run)
