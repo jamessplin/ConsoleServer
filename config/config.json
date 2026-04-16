@@ -1,6 +1,6 @@
 {
   "info": {
-    "base_port": 30000,
+    "base_port": 20000,
     "no_of_user": 32,
     "no_of_group": 32
   },
@@ -20,7 +20,7 @@
       "idle_timeout": 600,
       "fakeserial": false,
       "ser2net_host": "127.0.0.1",
-      "ser2net_port": 20000,
+      "ser2net_port": 50001,
       "device": "/dev/ttyUSB0",
       "ser2net_config": "ser2net_cfg/cs1.yaml",
       "baudrate": 115200,

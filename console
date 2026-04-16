@@ -118,7 +118,7 @@ main() {
   echo "Installed: $CONFIG_DST"
 
   # Dynamically determine base port from config
-  BASE_PORT=$(python3 "$CONFIG_SRC"/../get_base_port.py "$CONFIG_SRC")
+  BASE_PORT=$(python3 "$(dirname "$CONFIG_SRC")/get_base_port.py" "$CONFIG_SRC")
 
   # Set up SSH dispatch and secondary sshd before enabling seriald service
   echo "Setting up SSH dispatch and secondary sshd..."
