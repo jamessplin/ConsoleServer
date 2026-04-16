@@ -117,16 +117,16 @@ main() {
   install -D -m 0644 "$CONFIG_SRC" "$CONFIG_DST"
   echo "Installed: $CONFIG_DST"
 
-  command -v python3 >/dev/null || { echo "python3 not found" >&2; exit 1; }
-  echo "Done. Verify paths: $CLIENT_DST, $CLI_DST, $STATUS_DST, $DISPATCH_DST, $SERVER_DST, $CONFIG_DST"
+  # Dynamically determine base port from config
+  BASE_PORT=$(python3 "$CONFIG_SRC"/../get_base_port.py "$CONFIG_SRC")
 
   # Set up SSH dispatch and secondary sshd before enabling seriald service
   echo "Setting up SSH dispatch and secondary sshd..."
-  sudo /usr/local/bin/setup_ssh_dispatch.py -s 20001 -e 20024 \
+  sudo /usr/local/bin/setup_ssh_dispatch.py -s $((BASE_PORT + 1)) -e $((BASE_PORT + 24)) \
     --address-family inet \
     --port22-dualstack \
     --max-ports-per-sshd 16 \
-    --split-at-port 20012 \
+    --split-at-port $((BASE_PORT + 12)) \
     --enable-second-sshd \
     --second-sshd-config /etc/ssh/sshd_config_seriald2 \
     --second-sshd-service ssh-seriald2.service
