@@ -1,6 +1,6 @@
 {
   "info": {
-    "base_port": 20000,
+    "base_port": 35000,
     "no_of_user": 32,
     "no_of_group": 32
   },
@@ -522,7 +522,12 @@
   },
   "users": {
     "admin": {
-      "password": "changeme1",
+      "groups": [
+        "Group_Default"
+      ],
+      "role": "admin"
+    },
+    "bmc": {
       "groups": [
         "Group_Default"
       ],
