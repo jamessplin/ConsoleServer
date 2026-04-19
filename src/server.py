@@ -608,7 +608,6 @@ class SerialDaemon:
 
         client_id = f"{ip}:{port}"
         logging.debug(f"Connection opened from {client_id}")
-        logging.debug(f"%s Connection opened from {client_id}", time.strftime('%Y-%m-%d %H:%M:%S'))
 
         client = Client(writer=writer, ip=ip, port=port)
         now = time.time()
@@ -630,7 +629,6 @@ class SerialDaemon:
                     # Parse JSON message from client
                     msg = json.loads(line.decode())
                     logging.debug(f"Received from {client_id}: {msg}")
-                    logging.debug(f"%s Received from {client_id}: {msg}", time.strftime('%Y-%m-%d %H:%M:%S'))
                 except Exception:
                     # Send error if JSON is invalid, then continue
                     await self._send(writer, {"op": "error", "msg": "invalid json"})
@@ -728,7 +726,6 @@ class SerialDaemon:
                             return
                     # Add client to the set for this line
                     logging.debug(f"{line_id} Client attaching")
-                    logging.debug(f"%s {line_id} Client attaching", time.strftime('%Y-%m-%d %H:%M:%S'))
                     clients_set.add(client)
                     # Only ensure backend if this line uses fakeserial
                     if line_cfg.get("fakeserial"):
