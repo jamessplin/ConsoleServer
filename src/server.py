@@ -6,15 +6,22 @@ import json
 import threading
 import queue
 import time
-import subprocess
-import sys
 from dataclasses import dataclass
+import logging
+import sys
 from collections import deque
 from typing import Dict, Set, Optional
-# try: James
-#     import serial  # pyserial
-# except Exception:  # pragma: no cover
-#     serial = None
+
+# Logging setup: change level to logging.DEBUG for debug, logging.INFO for normal
+logging.basicConfig(
+    level=logging.DEBUG,  # Change to logging.DEBUG for more output
+    format='[%(asctime)s] [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.FileHandler('/var/log/seriald.log'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 
 
 # Role utility (inlined from role_utils.py)
@@ -162,16 +169,16 @@ def get_user_role_api(username: str, config_path: str = None):
     """
     Get the effective role for a user, using in-memory config if available, else fallback to config.json.
     """
-    print("Getting role for user:", username)
+    logging.info(f"Getting role for user: {username}")
     global _serial_daemon_instance
     if _serial_daemon_instance and hasattr(_serial_daemon_instance, 'config'):
         config = _serial_daemon_instance.config
-        print("Using in-memory config for role lookup")
+        logging.debug("Using in-memory config for role lookup")
         return get_effective_role(username, config)
     # Fallback to config.json on disk
     if config_path is None:
         config_path = os.path.join(os.path.dirname(__file__), "config.json")
-    print("Falling back to config file:", config_path)
+    logging.debug(f"Falling back to config file: {config_path}")
     return get_effective_role(username, config_path)
 
 import signal
@@ -226,7 +233,7 @@ class SerialDaemon:
             with open(self.config_path, 'r') as f:
                 return json.load(f)
         except (FileNotFoundError, json.JSONDecodeError) as e:
-            print(f"[ERROR] Could not load config from {self.config_path}: {e}", file=sys.stderr)
+            logging.error(f"Could not load config from {self.config_path}: {e}")
             # Return a minimal default config to avoid crashing
             return {
                 "listen": {"host": "127.0.0.1", "port": 25001},
@@ -238,16 +245,16 @@ class SerialDaemon:
         try:
             with open(self.config_path, 'w') as f:
                 json.dump(self.config, f, indent=2)
-            print(f"[INFO] Configuration saved to {self.config_path}")
+            logging.info(f"Configuration saved to {self.config_path}")
         except IOError as e:
-            print(f"[ERROR] Could not save config to {self.config_path}: {e}", file=sys.stderr)
+            logging.error(f"Could not save config to {self.config_path}: {e}")
 
     async def start(self, host, port):
         """Start the server, including subprocesses and background tasks."""
         # Start the main TCP server
         self.server = await asyncio.start_server(self.handle_client, host, port)
         addrs = ", ".join(str(s.getsockname()) for s in self.server.sockets)
-        print(f"[INFO] seriald listening on {addrs}")
+        logging.info(f"seriald listening on {addrs}")
 
         # Start ser2net instances
         await self._start_ser2net_instances()
@@ -263,7 +270,7 @@ class SerialDaemon:
         """Gracefully stop the server, subprocesses, and background tasks."""
         if self._shutdown_event.is_set():
             return
-        print("\n[INFO] Server shutting down...")
+        logging.info("Server shutting down...")
 
         # Stop ser2net instances first
         await self._stop_ser2net_instances()
@@ -279,7 +286,7 @@ class SerialDaemon:
             self.server.close()
             await self.server.wait_closed()
 
-        print("[INFO] Server has been shut down.")
+        logging.info("Server has been shut down.")
         # Signal that shutdown is complete
         self._shutdown_event.set()
 
@@ -296,7 +303,7 @@ class SerialDaemon:
         line_cfg = lines.get(line_id_str)
 
         if not line_cfg:
-            print(f"[ERROR] No configuration found for line {line_id}", file=sys.stderr)
+            logging.error(f"No configuration found for line {line_id}")
             return
 
         try:
@@ -318,7 +325,7 @@ class SerialDaemon:
             baudrate_str = f"{baud}{parity}{databits}{stopbits}{flow}"
 
             if not all([ser2net_port, device]):
-                print(f"[WARNING] Line {line_id}: missing ser2net_port or device, skipping.")
+                logging.warning(f"Line {line_id}: missing ser2net_port or device, skipping.")
                 return
 
             connector_str = f"serialdev,{device},{baudrate_str},local"
@@ -345,7 +352,7 @@ class SerialDaemon:
                 f.write(config_content)
 
             cmd = ["sudo", "/usr/sbin/ser2net", "-c", cfg_path]
-            print(f"[INFO] Starting ser2net for line {line_id} on port {ser2net_port}...")
+            logging.info(f"Starting ser2net for line {line_id} on port {ser2net_port}...")
 
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -353,12 +360,12 @@ class SerialDaemon:
                 stderr=asyncio.subprocess.PIPE
             )
             self.ser2net_processes[line_id] = process
-            print(f"[INFO] ser2net for line {line_id} started with PID {process.pid}.")
+            logging.info(f"ser2net for line {line_id} started with PID {process.pid}.")
 
         except (ValueError, KeyError, TypeError) as e:
-            print(f"[ERROR] Failed to process line {line_id}: {e}", file=sys.stderr)
+            logging.error(f"Failed to process line {line_id}: {e}")
         except Exception as e:
-            print(f"[ERROR] Failed to start ser2net for line {line_id}: {e}", file=sys.stderr)
+            logging.error(f"Failed to start ser2net for line {line_id}: {e}")
 
     async def stop_ser2net_for_line(self, line_id: int):
         """Stop the ser2net process for a specific line."""
@@ -368,45 +375,45 @@ class SerialDaemon:
             # Use pkill to find and terminate the process using the specific config file.
             # This is more robust against orphaned processes.
             pkill_cmd = ["sudo", "pkill", "-f", f"ser2net -c {cfg_path}"]
-            print(f"[INFO] Running command to clean up ser2net for line {line_id}: {' '.join(pkill_cmd)}")
+            logging.info(f"Running command to clean up ser2net for line {line_id}: {' '.join(pkill_cmd)}")
             proc = await asyncio.create_subprocess_exec(*pkill_cmd)
             await proc.wait()
             # A non-zero return code is okay, it just means no process was found
         except Exception as e:
-            print(f"[ERROR] Failed to run pkill for line {line_id}: {e!r}", file=sys.stderr)
+            logging.error(f"Failed to run pkill for line {line_id}: {e!r}")
 
         if line_id in self.ser2net_processes:
             process = self.ser2net_processes.pop(line_id)
-            print(f"[INFO] Stopping ser2net for line {line_id} (PID {process.pid})...")
+            logging.info(f"Stopping ser2net for line {line_id} (PID {process.pid})...")
             try:
                 # First, try a graceful shutdown
                 process.terminate()
                 try:
                     # Wait for a short timeout
                     await asyncio.wait_for(process.wait(), timeout=1.0)
-                    print(f"[INFO] ser2net for line {line_id} terminated gracefully.")
+                    logging.info(f"ser2net for line {line_id} terminated gracefully.")
                     return
                 except asyncio.TimeoutError:
                     # If it doesn't terminate, force kill it
-                    print(f"[WARNING] ser2net for line {line_id} did not terminate gracefully, killing.")
+                    logging.warning(f"ser2net for line {line_id} did not terminate gracefully, killing.")
                     process.kill()
                     await process.wait()
-                    print(f"[INFO] ser2net for line {line_id} killed.")
+                    logging.info(f"ser2net for line {line_id} killed.")
             except ProcessLookupError:
-                print(f"[WARNING] ser2net process for line {line_id} (PID {process.pid}) not found. It may have already exited.", file=sys.stderr)
+                logging.warning(f"ser2net process for line {line_id} (PID {process.pid}) not found. It may have already exited.")
             except Exception as e:
-                print(f"[ERROR] Failed to stop ser2net for line {line_id}: {e!r}", file=sys.stderr)
+                logging.error(f"Failed to stop ser2net for line {line_id}: {e!r}")
                 # Ensure it's killed even on other errors
                 try:
                     if process.returncode is None:
                         process.kill()
                         await process.wait()
                 except Exception as kill_e:
-                    print(f"[ERROR] Failed to force kill ser2net for line {line_id}: {kill_e}", file=sys.stderr)
+                    logging.error(f"Failed to force kill ser2net for line {line_id}: {kill_e}")
 
     async def _stop_ser2net_instances(self):
         """Terminate all managed ser2net subprocesses."""
-        print("[INFO] Stopping all ser2net instances...")
+        logging.info("Stopping all ser2net instances...")
         await asyncio.gather(*(self.stop_ser2net_for_line(line_id) for line_id in list(self.ser2net_processes.keys())))
         self.ser2net_processes.clear()
 
@@ -600,7 +607,8 @@ class SerialDaemon:
             ip, port = peer[0], peer[1]
 
         client_id = f"{ip}:{port}"
-        print(f"[DEBUG] Connection opened from {client_id}")
+        logging.debug(f"Connection opened from {client_id}")
+        logging.debug(f"%s Connection opened from {client_id}", time.strftime('%Y-%m-%d %H:%M:%S'))
 
         client = Client(writer=writer, ip=ip, port=port)
         now = time.time()
@@ -610,18 +618,19 @@ class SerialDaemon:
         try:
             # Main loop: process incoming lines from the client
             while True:
-                # print("Waiting for client message...")
+                # logging.debug("Waiting for client message...")
                 line = await reader.readline()
                 now = time.time()
                 if not line:
                     # Client disconnected
-                    print(f"[DEBUG] Client {client_id} sent empty line, closing connection.")
+                    logging.debug(f"Client {client_id} sent empty line, closing connection.")
                     break
                 self._last_activity[client] = now
                 try:
                     # Parse JSON message from client
                     msg = json.loads(line.decode())
-                    print(f"[DEBUG] Received from {client_id}: {msg}")
+                    logging.debug(f"Received from {client_id}: {msg}")
+                    logging.debug(f"%s Received from {client_id}: {msg}", time.strftime('%Y-%m-%d %H:%M:%S'))
                 except Exception:
                     # Send error if JSON is invalid, then continue
                     await self._send(writer, {"op": "error", "msg": "invalid json"})
@@ -718,11 +727,12 @@ class SerialDaemon:
                             await self._send(writer, {"op": "error", "msg": f"client limit reached ({maxc})"})
                             return
                     # Add client to the set for this line
-                    print(line_id, "Client attaching")
+                    logging.debug(f"{line_id} Client attaching")
+                    logging.debug(f"%s {line_id} Client attaching", time.strftime('%Y-%m-%d %H:%M:%S'))
                     clients_set.add(client)
                     # Only ensure backend if this line uses fakeserial
                     if line_cfg.get("fakeserial"):
-                        print(line_id, "Ensuring backend for line (fakeserial)")
+                        logging.debug(f"{line_id} Ensuring backend for line (fakeserial)")
                         self._ensure_backend(line_id)
 
                     can_write = False
@@ -927,13 +937,13 @@ class SerialDaemon:
                     if updated:
                         # self._save_config() # Removed to separate running-config from startup-config
                         if restart_required:
-                            print(f"[INFO] Restarting ser2net for line {line_id} due to config change.")
+                            logging.info(f"Restarting ser2net for line {line_id} due to config change.")
                             # Mode changes might require ser2net restart if kickolduser or max-connections changes
                             await self.stop_ser2net_for_line(int(line_id))
                             await asyncio.sleep(0.5) # Give OS time to release the port
                             await self.start_ser2net_for_line(int(line_id))
                         else:
-                            print(f"[INFO] Updated config for line {line_id} without restart.")
+                            logging.info(f"Updated config for line {line_id} without restart.")
 
                         await self._send(writer, {"op": "config_op", "ok": True, "line": line_id})
                     else:
@@ -1128,7 +1138,7 @@ class SerialDaemon:
             # Remove from last activity tracking
             self._last_activity.pop(client, None)
             # Cleanup: always run on disconnect or error
-            print(f"[DEBUG] Connection closed from {client_id}")
+            logging.debug(f"Connection closed from {client_id}")
             line_id = client.line_id
             if line_id is not None:
                 # Remove client from all tracking structures
@@ -1182,7 +1192,7 @@ async def main(host="127.0.0.1", port=25001, config_path: Optional[str] = None):
         with open(config_path, "r") as f:
             cfg = json.load(f)
     except Exception as e:
-        print(f"failed to load config: {e}")
+        logging.error(f"failed to load config: {e}")
         cfg = None
 
     daemon = SerialDaemon(config=cfg, config_path=config_path)
@@ -1197,7 +1207,7 @@ async def main(host="127.0.0.1", port=25001, config_path: Optional[str] = None):
 
     def signal_handler():
         # This function will be wrapped in a lambda to schedule the stop coroutine
-        print("Signal received, initiating shutdown...")
+        logging.info("Signal received, initiating shutdown...")
         asyncio.create_task(daemon.stop())
 
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -1221,6 +1231,6 @@ if __name__ == "__main__":
         asyncio.run(main(args.host, args.port, args.config))
     except KeyboardInterrupt:
         # This is now primarily handled by the signal handler, but kept as a fallback.
-        print("[INFO] KeyboardInterrupt caught, shutting down.")
+        logging.info("KeyboardInterrupt caught, shutting down.")
 
 

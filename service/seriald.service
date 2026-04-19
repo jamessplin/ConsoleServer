@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/bin/python3 /usr/local/bin/server.py --config  /etc/seriald/config.json
+ExecStart=/usr/bin/python3 -u /usr/local/bin/server.py --config  /etc/seriald/config.json
 Restart=on-failure
 
 [Install]
