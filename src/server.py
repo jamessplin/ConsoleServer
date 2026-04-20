@@ -227,6 +227,11 @@ class SerialDaemon:
         # Event to signal shutdown
         self._shutdown_event = asyncio.Event()
 
+        # Load user and group limits
+        info = self.config.get("info", {})
+        self.user_limit = info.get("no_of_user", 32)
+        self.group_limit = info.get("no_of_group", 32)
+
     def _load_config(self):
         """Loads configuration from the json file."""
         try:
@@ -963,6 +968,11 @@ class SerialDaemon:
                         await self._send(writer, {"op": "error", "msg": "missing username"})
                         continue
 
+                    # Check if we are adding a new user and if the limit is reached
+                    if username not in self.users and len(self.users) >= self.user_limit:
+                        await self._send(writer, {"op": "error", "msg": f"User limit of {self.user_limit} reached"})
+                        continue
+
                     users = self.config.setdefault("users", {})
                     is_new_user = username not in users
                     # Require password only for new users
@@ -1010,6 +1020,11 @@ class SerialDaemon:
                     groupname = msg.get("groupname")
                     if not groupname:
                         await self._send(writer, {"op": "error", "msg": "missing groupname"})
+                        continue
+
+                    # Check if we are adding a new group and if the limit is reached
+                    if groupname not in self.groups and len(self.groups) >= self.group_limit:
+                        await self._send(writer, {"op": "error", "msg": f"Group limit of {self.group_limit} reached"})
                         continue
 
                     groups = self.config.setdefault("groups", {})
