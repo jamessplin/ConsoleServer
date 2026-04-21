@@ -898,7 +898,8 @@ class SerialDaemon:
                         await self.start_ser2net_for_line(int(line_id))
                         await self._send(writer, {"op": "config_port", "ok": True, "line": line_id})
                     else:
-                        await self._send(writer, {"op": "config_port", "ok": False, "line": line_id, "msg": "no valid parameters to update"})
+                        #await self._send(writer, {"op": "config_port", "ok": False, "line": line_id, "msg": "no valid parameters to update"})
+                        await self._send(writer, {"op": "config_port", "ok": True, "line": line_id})
                     continue
 
                 # Handle 'config_op' operation
@@ -949,7 +950,8 @@ class SerialDaemon:
 
                         await self._send(writer, {"op": "config_op", "ok": True, "line": line_id})
                     else:
-                        await self._send(writer, {"op": "config_op", "ok": False, "line": line_id, "msg": "no valid parameters to update or value is the same"})
+                        # await self._send(writer, {"op": "config_op", "ok": False, "line": line_id, "msg": "no valid parameters to update or "})
+                        await self._send(writer, {"op": "config_op", "ok": True, "line": line_id})
                     continue
 
                 # Handle 'save-config' operation

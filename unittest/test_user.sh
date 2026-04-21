@@ -114,7 +114,7 @@ if [ "$LIMIT_REACHED_SUCCESS" = false ]; then
 fi
 
 echov "Final user list before cleanup:"
-$CONSOLE_CLI show running-config --users
+echov "$($CONSOLE_CLI show running-config --users)"
 
 # 4. Cleanup is handled by the trap on EXIT
 echov "--- All tests passed successfully! ---"
