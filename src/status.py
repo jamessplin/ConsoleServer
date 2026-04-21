@@ -21,7 +21,15 @@ def max_clients_1_to_4(value):
     return ivalue
 
 
+_quiet_mode = False
+
+def qprint(*args, **kwargs):
+    """Quiet print - only prints if quiet mode is not enabled."""
+    if not _quiet_mode:
+        print(*args, **kwargs)
+
 def write_stdout(data: bytes):
+    # This is a low-level writer, qprint should be used for conditional output
     os.write(sys.stdout.fileno(), data)
 
 async def print_config_from_server(host: str, port: int):
@@ -103,7 +111,7 @@ def render_status(status: dict) -> bytes:
     return "".join(out).encode()
 
 
-async def send_config_update(host: str, port: int, msg: dict):
+async def send_config_update(host: str, port: int, msg: dict) -> bool:
     """Sends a configuration update message to the server and prints the response."""
     try:
         reader, writer = await asyncio.open_connection(host, port)
@@ -114,17 +122,19 @@ async def send_config_update(host: str, port: int, msg: dict):
         response = json.loads(response_line.decode())
 
         if response.get("ok"):
-            write_stdout(b"Configuration updated successfully.\n")
+            qprint("Configuration updated successfully.")
+            return True
         else:
             error_msg = response.get("msg", "unknown error")
-            write_stdout(f"Failed to update configuration: {error_msg}\n".encode())
-            import sys
-            sys.exit(1)
+            qprint(f"Failed to update configuration: {error_msg}")
+            return False
 
     except ConnectionRefusedError:
-        write_stdout(b"Error: Connection refused. Is the seriald server running?\n")
+        qprint("Error: Connection refused. Is the seriald server running?")
+        return False
     except Exception as e:
-        write_stdout(f"An error occurred: {e}\n".encode())
+        qprint(f"An error occurred: {e}")
+        return False
     finally:
         try:
             writer.close()
@@ -133,12 +143,15 @@ async def send_config_update(host: str, port: int, msg: dict):
             pass
         except Exception: # other errors
             pass
+    return False
 
 async def main():
+    global _quiet_mode
     import argparse
     p = argparse.ArgumentParser(description="seriald status utility")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=25001)
+    p.add_argument("-q", "--quiet", action="store_true", help="suppress informational output")
     subparsers = p.add_subparsers(dest="command", required=True)
 
     sp_sessions = subparsers.add_parser("sessions", help="show daemon sessions")
@@ -155,6 +168,7 @@ async def main():
     sp_config_port.add_argument("--parity", choices=['none', 'even', 'odd', 'mark', 'space'], help="sets the parity")
     sp_config_port.add_argument("--stopbits", type=int, choices=[1, 2], help="sets the stop bits")
     sp_config_port.add_argument("--flowcontrol", choices=['none', 'rtscts'], help="sets flow control")
+    sp_config_port.add_argument("-q", "--quiet", action="store_true", help="suppress output (ignored)")
 
     # New subparser for config-op
     sp_config_op = subparsers.add_parser("config-op", help="configure port operational settings")
@@ -163,20 +177,24 @@ async def main():
     sp_config_op.add_argument("--max-clients", type=max_clients_1_to_4, help="sets the maximum number of concurrent clients (1-4)")
     sp_config_op.add_argument("--idle-timeout", type=int, help="sets the idle timeout in seconds")
     sp_config_op.add_argument("--label", type=str, help="sets a user-friendly nickname for the device")
+    sp_config_op.add_argument("-q", "--quiet", action="store_true", help="suppress output (ignored)")
 
     # New subparsers for show-running-config and show-startup-config
     sp_show_running = subparsers.add_parser("show-running-config", help="show running configuration")
     sp_show_running.add_argument("--line", dest="line_id", type=str, help="display config for a specific line (ID or label)")
     sp_show_running.add_argument("--groups", action="store_true", help="display groups configuration")
     sp_show_running.add_argument("--users", action="store_true", help="display users configuration")
+    sp_show_running.add_argument("-q", "--quiet", action="store_true", help="suppress output (ignored)")
 
     sp_show_startup = subparsers.add_parser("show-startup-config", help="show startup configuration")
     sp_show_startup.add_argument("--line", dest="line_id", type=str, help="display config for a specific line (ID or label)")
     sp_show_startup.add_argument("--groups", action="store_true", help="display groups configuration")
     sp_show_startup.add_argument("--users", action="store_true", help="display users configuration")
+    sp_show_startup.add_argument("-q", "--quiet", action="store_true", help="suppress output (ignored)")
 
     # New subparser for save-config
     sp_save_config = subparsers.add_parser("save-config", help="save running-config to startup-config")
+    sp_save_config.add_argument("-q", "--quiet", action="store_true", help="suppress output (ignored)")
 
     # User management
     sp_config_user = subparsers.add_parser("config-user", help="create or modify a user")
@@ -184,20 +202,26 @@ async def main():
     sp_config_user.add_argument("--role", choices=['operator', 'console_user', 'admin', 'none'], help="assigns a specific role to the user")
     sp_config_user.add_argument("--groups", type=str, help="comma-separated list of groups")
     sp_config_user.add_argument("--password", type=str, help="set or update the user password (local Linux account only)")
+    sp_config_user.add_argument("-q", "--quiet", action="store_true", help="suppress output (ignored)")
 
     sp_config_no_user = subparsers.add_parser("config-no-user", help="delete a user")
     sp_config_no_user.add_argument("username", type=str, help="the username to delete")
+    sp_config_no_user.add_argument("-q", "--quiet", action="store_true", help="suppress output (ignored)")
 
     # Group management
     sp_config_group = subparsers.add_parser("config-group", help="create or modify a group")
     sp_config_group.add_argument("groupname", type=str, help="the group name to configure")
     sp_config_group.add_argument("--ports", type=str, help="comma-separated list of port numbers")
     sp_config_group.add_argument("--role", choices=['operator', 'console_user', 'admin', 'none'], help="assigns a default role to the group")
+    sp_config_group.add_argument("-q", "--quiet", action="store_true", help="suppress output (ignored)")
 
     sp_config_no_group = subparsers.add_parser("config-no-group", help="delete a group")
     sp_config_no_group.add_argument("groupname", type=str, help="the group name to delete")
+    sp_config_no_group.add_argument("-q", "--quiet", action="store_true", help="suppress output (ignored)")
 
     args = p.parse_args()
+    if args.quiet:
+        _quiet_mode = True
 
     if args.command == "sessions":
         st = await get_status(args.host, args.port, line_id=args.line)
@@ -243,7 +267,8 @@ async def main():
 
     if args.command == "save-config":
         msg = {"op": "save-config"}
-        await send_config_update(args.host, args.port, msg)
+        if not await send_config_update(args.host, args.port, msg):
+            sys.exit(1)
         return
 
     if args.command == "config-port":
@@ -258,7 +283,8 @@ async def main():
             msg["stopbits"] = args.stopbits
         if args.flowcontrol is not None:
             msg["flowcontrol"] = args.flowcontrol
-        await send_config_update(args.host, args.port, msg)
+        if not await send_config_update(args.host, args.port, msg):
+            sys.exit(1)
         return
 
     if args.command == "config-op":
@@ -271,35 +297,62 @@ async def main():
             msg["idle_timeout"] = args.idle_timeout
         if args.label is not None:
             msg["label"] = args.label
-        await send_config_update(args.host, args.port, msg)
+        if not await send_config_update(args.host, args.port, msg):
+            sys.exit(1)
         return
 
     if args.command == "config-user":
         msg = {"op": "config_user", "username": args.username}
-        print(f"Configuring user: {args}")
+        qprint(f"Configuring user: {args}")
         if args.role is not None:
             msg["role"] = args.role
         if args.groups is not None:
             msg["groups"] = args.groups.split(',')
         if args.password is not None:
             msg["password"] = args.password
-            subprocess.run([
-                "sudo", "/usr/local/bin/setup_ssh_dispatch.py",
-                "--create-users", "--users", args.username,
-                "--password", args.password
-            ], check=True)
 
-        await send_config_update(args.host, args.port, msg)
+        # First, try to update the config on the server
+        success = await send_config_update(args.host, args.port, msg)
+
+        # If the server update is successful and a password is provided, create the system user
+        if success and args.password is not None:
+            try:
+                subprocess.run([
+                    "sudo", "/usr/local/bin/setup_ssh_dispatch.py",
+                    "--create-users", "--users", args.username,
+                    "--password", args.password,
+                    "--quiet"
+                ], check=True)
+            except subprocess.CalledProcessError as e:
+                qprint(f"Failed to create system user {args.username}: {e}")
+                # Optionally, send a command to revert the config change on the server
+                # This would require a "revert" or "delete" operation to be implemented
+                sys.exit(1)
+        elif not success:
+            sys.exit(1)
         return
 
     if args.command == "config-no-user":
         msg = {"op": "config_no_user", "username": args.username}
-        subprocess.run([
-            "sudo", "/usr/local/bin/setup_ssh_dispatch.py",
-            "--delete-users", args.username,
-            "--remove-home"
-        ], check=True)
-        await send_config_update(args.host, args.port, msg)
+
+        # First, try to update the config on the server
+        success = await send_config_update(args.host, args.port, msg)
+
+        # If the server update is successful, delete the system user
+        if success:
+            try:
+                subprocess.run([
+                    "sudo", "/usr/local/bin/setup_ssh_dispatch.py",
+                    "--delete-users", args.username,
+                    "--remove-home",
+                    "--quiet"
+                ], check=True)
+            except subprocess.CalledProcessError as e:
+                qprint(f"Failed to delete system user {args.username}: {e}")
+                # Potentially revert the server config change here
+                sys.exit(1)
+        else:
+            sys.exit(1)
         return
 
     if args.command == "config-group":
@@ -309,16 +362,18 @@ async def main():
             try:
                 msg["ports"] = [int(p.strip()) for p in args.ports.split(',')]
             except ValueError:
-                write_stdout(b"Error: Port list must contain only numbers.\n")
+                qprint("Error: Port list must contain only numbers.")
                 sys.exit(1)
         if args.role is not None:
             msg["role"] = args.role
-        await send_config_update(args.host, args.port, msg)
+        if not await send_config_update(args.host, args.port, msg):
+            sys.exit(1)
         return
 
     if args.command == "config-no-group":
         msg = {"op": "config_no_group", "groupname": args.groupname}
-        await send_config_update(args.host, args.port, msg)
+        if not await send_config_update(args.host, args.port, msg):
+            sys.exit(1)
         return
 
     if args.command == "user-role":

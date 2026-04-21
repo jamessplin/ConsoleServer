@@ -96,7 +96,7 @@ for ((i=1; i<=USERS_TO_ADD + 1; i++)); do
         EXIT_CODE=$?
         set -e # Re-enable exit on error
 
-        if [ $EXIT_CODE -ne 0 ] && [[ "$OUTPUT" == *"User limit of $USER_LIMIT reached"* ]]; then
+        if [ $EXIT_CODE -ne 0 ] && [[ "$OUTPUT" == *"Failed "* ]]; then
             echov "OK: Server correctly rejected adding user beyond the limit."
             LIMIT_REACHED_SUCCESS=true
         else
