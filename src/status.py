@@ -28,6 +28,10 @@ def qprint(*args, **kwargs):
     if not _quiet_mode:
         print(*args, **kwargs)
 
+def eprint(*args, **kwargs):
+    """Always print to stderr, even in quiet mode."""
+    print(*args, file=sys.stderr, **kwargs)
+
 def write_stdout(data: bytes):
     # This is a low-level writer, qprint should be used for conditional output
     os.write(sys.stdout.fileno(), data)
@@ -111,30 +115,35 @@ def render_status(status: dict) -> bytes:
     return "".join(out).encode()
 
 
-async def send_config_update(host: str, port: int, msg: dict) -> bool:
-    """Sends a configuration update message to the server and prints the response."""
+async def send_config_update(host: str, port: int, msg: dict, expected_op: str = None) -> tuple[bool, str]:
+    """Send config update and return (ok, error_message)."""
     try:
         reader, writer = await asyncio.open_connection(host, port)
         writer.write(json.dumps(msg).encode() + b"\n")
         await writer.drain()
 
         response_line = await reader.readline()
-        response = json.loads(response_line.decode())
+        try:
+            response = json.loads(response_line.decode())
+        except Exception:
+            return False, "invalid response"
+
+        if response.get("op") == "error":
+            return False, response.get("msg", "unknown error")
+
+        if expected_op and response.get("op") != expected_op:
+            return False, f"unexpected response op: {response.get('op')}"
 
         if response.get("ok"):
             qprint("Configuration updated successfully.")
-            return True
-        else:
-            error_msg = response.get("msg", "unknown error")
-            qprint(f"Failed to update configuration: {error_msg}")
-            return False
+            return True, ""
+
+        return False, response.get("msg", "unknown error")
 
     except ConnectionRefusedError:
-        qprint("Error: Connection refused. Is the seriald server running?")
-        return False
+        return False, "Connection refused. Is the seriald server running?"
     except Exception as e:
-        qprint(f"An error occurred: {e}")
-        return False
+        return False, f"An error occurred: {e}"
     finally:
         try:
             writer.close()
@@ -143,7 +152,7 @@ async def send_config_update(host: str, port: int, msg: dict) -> bool:
             pass
         except Exception: # other errors
             pass
-    return False
+    return False, "unknown error"
 
 async def main():
     global _quiet_mode
@@ -267,7 +276,9 @@ async def main():
 
     if args.command == "save-config":
         msg = {"op": "save-config"}
-        if not await send_config_update(args.host, args.port, msg):
+        ok, err = await send_config_update(args.host, args.port, msg, expected_op="save-config")
+        if not ok:
+            eprint(f"Error: {err}")
             sys.exit(1)
         return
 
@@ -283,7 +294,9 @@ async def main():
             msg["stopbits"] = args.stopbits
         if args.flowcontrol is not None:
             msg["flowcontrol"] = args.flowcontrol
-        if not await send_config_update(args.host, args.port, msg):
+        ok, err = await send_config_update(args.host, args.port, msg, expected_op="config_port")
+        if not ok:
+            eprint(f"Error: {err}")
             sys.exit(1)
         return
 
@@ -297,13 +310,14 @@ async def main():
             msg["idle_timeout"] = args.idle_timeout
         if args.label is not None:
             msg["label"] = args.label
-        if not await send_config_update(args.host, args.port, msg):
+        ok, err = await send_config_update(args.host, args.port, msg, expected_op="config_op")
+        if not ok:
+            eprint(f"Error: {err}")
             sys.exit(1)
         return
 
     if args.command == "config-user":
         msg = {"op": "config_user", "username": args.username}
-        qprint(f"Configuring user: {args}")
         if args.role is not None:
             msg["role"] = args.role
         if args.groups is not None:
@@ -311,8 +325,12 @@ async def main():
         if args.password is not None:
             msg["password"] = args.password
 
-        # First, try to update the config on the server
-        success = await send_config_update(args.host, args.port, msg)
+        # Send to server
+        success, err = await send_config_update(args.host, args.port, msg, expected_op="config_user")
+        print(f"Server update {'succeeded' if success else 'failed'} for user {args.username}.")
+        if not success:
+            eprint(f"Error: {err}")
+            sys.exit(1)
 
         # If the server update is successful and a password is provided, create the system user
         if success and args.password is not None:
@@ -324,19 +342,17 @@ async def main():
                     "--quiet"
                 ], check=True)
             except subprocess.CalledProcessError as e:
-                qprint(f"Failed to create system user {args.username}: {e}")
+                eprint(f"Local user sync failed for {args.username}: {e}")
                 # Optionally, send a command to revert the config change on the server
                 # This would require a "revert" or "delete" operation to be implemented
                 sys.exit(1)
-        elif not success:
-            sys.exit(1)
         return
 
     if args.command == "config-no-user":
         msg = {"op": "config_no_user", "username": args.username}
 
         # First, try to update the config on the server
-        success = await send_config_update(args.host, args.port, msg)
+        success, err = await send_config_update(args.host, args.port, msg, expected_op="config_no_user")
 
         # If the server update is successful, delete the system user
         if success:
@@ -348,10 +364,11 @@ async def main():
                     "--quiet"
                 ], check=True)
             except subprocess.CalledProcessError as e:
-                qprint(f"Failed to delete system user {args.username}: {e}")
+                eprint(f"Local user delete failed for {args.username}: {e}")
                 # Potentially revert the server config change here
                 sys.exit(1)
         else:
+            eprint(f"Error: {err}")
             sys.exit(1)
         return
 
@@ -366,13 +383,17 @@ async def main():
                 sys.exit(1)
         if args.role is not None:
             msg["role"] = args.role
-        if not await send_config_update(args.host, args.port, msg):
+        ok, err = await send_config_update(args.host, args.port, msg, expected_op="config_group")
+        if not ok:
+            eprint(f"Error: {err}")
             sys.exit(1)
         return
 
     if args.command == "config-no-group":
         msg = {"op": "config_no_group", "groupname": args.groupname}
-        if not await send_config_update(args.host, args.port, msg):
+        ok, err = await send_config_update(args.host, args.port, msg, expected_op="config_no_group")
+        if not ok:
+            eprint(f"Error: {err}")
             sys.exit(1)
         return
 

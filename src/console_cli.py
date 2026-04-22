@@ -514,7 +514,9 @@ def user_add(username, role, groups, password):
         if stdout.strip(): click.echo(stdout)
     else:
         click.echo("Failed to update user configuration.", err=True)
-        if stderr.strip(): click.echo(stderr, err=True)
+        detail = stderr.strip() or stdout.strip()
+        if detail:
+            click.echo(detail, err=True)
         sys.exit(1)
 
 @user.command(name='delete')
