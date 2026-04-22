@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+import re
 import threading
 import queue
 import time
@@ -50,6 +51,30 @@ USER_DEFAULT_GROUP = ["Group_Default"]  # default to access to all ports, can be
 USER_DEFAULT_ROLE = UserRole.NONE.value
 GROUP_DEFAULT_PORTS = list(range(1, 25))  # default to access to all ports, can be overridden
 GROUP_DEFAULT_ROLE = UserRole.CONSOLE_USER.value
+
+USERNAME_MAX_LENGTH = 32
+PASSWORD_MAX_LENGTH = 128
+USERNAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def validate_username(username: str) -> Optional[str]:
+    if not isinstance(username, str) or not username:
+        return "missing username"
+    if len(username) > USERNAME_MAX_LENGTH:
+        return f"username must be <= {USERNAME_MAX_LENGTH} characters"
+    if not USERNAME_PATTERN.match(username):
+        return "username must start with a letter or underscore and contain only letters, digits, or underscore"
+    return None
+
+
+def validate_password(password: str) -> Optional[str]:
+    if not isinstance(password, str):
+        return "password must be a string"
+    if not password:
+        return "password cannot be empty"
+    if len(password) > PASSWORD_MAX_LENGTH:
+        return f"password must be <= {PASSWORD_MAX_LENGTH} characters"
+    return None
 
 def get_effective_role(username: str, config) -> Optional[str]:
     """
@@ -970,6 +995,18 @@ class SerialDaemon:
                         await self._send(writer, {"op": "error", "msg": "missing username"})
                         continue
 
+                    username_error = validate_username(username)
+                    if username_error:
+                        await self._send(writer, {"op": "error", "msg": username_error})
+                        continue
+
+                    password = msg.get("password")
+                    if password is not None:
+                        password_error = validate_password(password)
+                        if password_error:
+                            await self._send(writer, {"op": "error", "msg": password_error})
+                            continue
+
                     # Check if we are adding a new user and if the limit is reached
                     if username not in self.users and len(self.users) >= self.user_limit:
                         await self._send(writer, {"op": "error", "msg": f"User limit of {self.user_limit} reached"})
@@ -999,6 +1036,8 @@ class SerialDaemon:
                         user_data["role"] = msg["role"]
                     if "groups" in msg:
                         user_data["groups"] = msg["groups"]
+                    if password is not None:
+                        user_data["password"] = password
 
                     await self._send(writer, {"op": "config_user", "ok": True, "username": username})
                     continue
