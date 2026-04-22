@@ -586,7 +586,9 @@ def group_add(groupname, ports, role):
         if stdout.strip(): click.echo(stdout)
     else:
         click.echo("Failed to update group configuration.", err=True)
-        if stderr.strip(): click.echo(stderr, err=True)
+        detail = stderr.strip() or stdout.strip()
+        if detail:
+            click.echo(detail, err=True)
         sys.exit(1)
 
 @group.command(name='delete')
@@ -599,7 +601,9 @@ def group_delete(groupname):
         if stdout.strip(): click.echo(stdout)
     else:
         click.echo(f"Failed to delete group '{groupname}'.", err=True)
-        if stderr.strip(): click.echo(stderr, err=True)
+        detail = stderr.strip() or stdout.strip()
+        if detail:
+            click.echo(detail, err=True)
         sys.exit(1)
 
 cli.add_command(config)

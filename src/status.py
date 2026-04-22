@@ -379,7 +379,7 @@ async def main():
             try:
                 msg["ports"] = [int(p.strip()) for p in args.ports.split(',')]
             except ValueError:
-                qprint("Error: Port list must contain only numbers.")
+                eprint("Error: Port list must contain only numbers.")
                 sys.exit(1)
         if args.role is not None:
             msg["role"] = args.role

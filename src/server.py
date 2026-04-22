@@ -54,6 +54,7 @@ GROUP_DEFAULT_ROLE = UserRole.CONSOLE_USER.value
 
 USERNAME_MAX_LENGTH = 32
 PASSWORD_MAX_LENGTH = 128
+GROUPNAME_MAX_LENGTH = 32
 USERNAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -74,6 +75,14 @@ def validate_password(password: str) -> Optional[str]:
         return "password cannot be empty"
     if len(password) > PASSWORD_MAX_LENGTH:
         return f"password must be <= {PASSWORD_MAX_LENGTH} characters"
+    return None
+
+
+def validate_groupname(groupname: str) -> Optional[str]:
+    if not isinstance(groupname, str) or not groupname:
+        return "missing groupname"
+    if len(groupname) > GROUPNAME_MAX_LENGTH:
+        return f"groupname must be <= {GROUPNAME_MAX_LENGTH} characters"
     return None
 
 def get_effective_role(username: str, config) -> Optional[str]:
@@ -1059,8 +1068,9 @@ class SerialDaemon:
                 # Handle 'config_group'
                 elif op == "config_group":
                     groupname = msg.get("groupname")
-                    if not groupname:
-                        await self._send(writer, {"op": "error", "msg": "missing groupname"})
+                    groupname_error = validate_groupname(groupname)
+                    if groupname_error:
+                        await self._send(writer, {"op": "error", "msg": groupname_error})
                         continue
 
                     # Check if we are adding a new group and if the limit is reached
@@ -1094,8 +1104,9 @@ class SerialDaemon:
                 # Handle 'config_no_group'
                 elif op == "config_no_group":
                     groupname = msg.get("groupname")
-                    if not groupname:
-                        await self._send(writer, {"op": "error", "msg": "missing groupname"})
+                    groupname_error = validate_groupname(groupname)
+                    if groupname_error:
+                        await self._send(writer, {"op": "error", "msg": groupname_error})
                         continue
 
                     if groupname in self.config.get("groups", {}):
