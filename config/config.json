@@ -1,8 +1,8 @@
 {
   "info": {
     "base_port": 35000,
-    "no_of_user": 32,
-    "no_of_group": 32
+    "no_of_user": 5,
+    "no_of_group": 5
   },
   "listen": {
     "host": "127.0.0.1",
@@ -391,6 +391,8 @@
       "interface": "rs232"
     },
     "20": {
+      "name": "COM20",
+      "label": "COM20",
       "mode": "shared",
       "echo": true,
       "window_ms": 800,

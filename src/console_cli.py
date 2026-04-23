@@ -327,7 +327,54 @@ def _render_config_section_as_table(config_data, section_name):
     return False
 
 
-def _display_show_output(stdout, *, show_groups=False, show_users=False):
+def _render_lines_section(config_data):
+    lines = config_data.get("lines", {})
+    if not isinstance(lines, dict) or not lines:
+        return False
+
+    def _line_sort_key(value):
+        text = str(value).strip()
+        if text.isdigit():
+            return (0, int(text), text)
+        return (1, text)
+
+    display_fields = [
+        "line",
+        "name",
+        "label",
+        "mode",
+        "max_clients",
+        "idle_timeout",
+        "baudrate",
+        "databits",
+        "stopbits",
+        "parity",
+        "flowcontrol",
+        "interface",
+    ]
+    rows = []
+    for line_key in sorted(lines.keys(), key=_line_sort_key):
+        line_cfg = lines.get(line_key, {}) or {}
+        rows.append([
+            line_key,
+            line_cfg.get("name"),
+            line_cfg.get("label"),
+            line_cfg.get("mode"),
+            line_cfg.get("max_clients"),
+            line_cfg.get("idle_timeout"),
+            line_cfg.get("baudrate"),
+            line_cfg.get("databits"),
+            line_cfg.get("stopbits"),
+            line_cfg.get("parity"),
+            line_cfg.get("flowcontrol"),
+            line_cfg.get("interface"),
+        ])
+    _print_table(display_fields, rows)
+
+    return True
+
+
+def _display_show_output(stdout, *, show_groups=False, show_users=False, show_line=False):
     if not stdout:
         return
 
@@ -344,6 +391,10 @@ def _display_show_output(stdout, *, show_groups=False, show_users=False):
         if rendered_any:
             click.echo("")
         rendered_any = _render_config_section_as_table(parsed, "groups") or rendered_any
+    if show_line:
+        if rendered_any:
+            click.echo("")
+        rendered_any = _render_lines_section(parsed) or rendered_any
 
     if rendered_any:
         return
@@ -722,7 +773,12 @@ def show_running_config(line_id, groups, users, output_json):
         if stdout:
             click.echo(stdout, nl=False)
     else:
-        _display_show_output(stdout, show_groups=groups, show_users=users)
+        _display_show_output(
+            stdout,
+            show_groups=groups,
+            show_users=users,
+            show_line=normalized_line_id is not None,
+        )
     if retcode != 0 and stderr.strip():
         click.echo(stderr, err=True)
 
@@ -746,7 +802,12 @@ def show_startup_config(line_id, groups, users, output_json):
         if stdout:
             click.echo(stdout, nl=False)
     else:
-        _display_show_output(stdout, show_groups=groups, show_users=users)
+        _display_show_output(
+            stdout,
+            show_groups=groups,
+            show_users=users,
+            show_line=normalized_line_id is not None,
+        )
     if retcode != 0 and stderr.strip():
         click.echo(stderr, err=True)
 
