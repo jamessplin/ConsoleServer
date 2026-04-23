@@ -4,6 +4,7 @@ import os
 import pwd
 import sys
 import time
+import json
 import threading
 import queue
 import subprocess
@@ -271,6 +272,83 @@ def _run_status_cmd(cmd_args, quiet_on_success=False):
         return process.returncode, stdout, stderr
     except Exception as e:
         return 1, "", str(e)
+
+
+def _normalize_cell(value):
+    if value is None:
+        return "-"
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value) if value else "-"
+    return str(value)
+
+
+def _print_table(headers, rows):
+    normalized_rows = [[_normalize_cell(cell) for cell in row] for row in rows]
+    widths = [len(str(h)) for h in headers]
+    for row in normalized_rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(cell))
+
+    header_line = "  ".join(str(h).ljust(widths[i]) for i, h in enumerate(headers))
+    sep_line = "  ".join("-" * widths[i] for i in range(len(headers)))
+    click.echo(header_line)
+    click.echo(sep_line)
+    for row in normalized_rows:
+        click.echo("  ".join(row[i].ljust(widths[i]) for i in range(len(headers))))
+
+
+def _render_config_section_as_table(config_data, section_name):
+    if section_name == "users":
+        users = config_data.get("users", {})
+        if not isinstance(users, dict):
+            return False
+        rows = []
+        for username in sorted(users.keys()):
+            user_cfg = users.get(username, {}) or {}
+            groups = user_cfg.get("groups", [])
+            role = user_cfg.get("role", "-")
+            rows.append([username, groups, role])
+        _print_table(["user", "group", "role"], rows)
+        return True
+
+    if section_name == "groups":
+        groups = config_data.get("groups", {})
+        if not isinstance(groups, dict):
+            return False
+        rows = []
+        for group_name in sorted(groups.keys()):
+            group_cfg = groups.get(group_name, {}) or {}
+            port_list = group_cfg.get("port_list", [])
+            role = group_cfg.get("role", "-")
+            rows.append([group_name, port_list, role])
+        _print_table(["group", "port_list", "role"], rows)
+        return True
+
+    return False
+
+
+def _display_show_output(stdout, *, show_groups=False, show_users=False):
+    if not stdout:
+        return
+
+    try:
+        parsed = json.loads(stdout)
+    except Exception:
+        click.echo(stdout, nl=False)
+        return
+
+    rendered_any = False
+    if show_users:
+        rendered_any = _render_config_section_as_table(parsed, "users") or rendered_any
+    if show_groups:
+        if rendered_any:
+            click.echo("")
+        rendered_any = _render_config_section_as_table(parsed, "groups") or rendered_any
+
+    if rendered_any:
+        return
+
+    click.echo(stdout, nl=False)
 
 def get_user_and_role():
     try:
@@ -627,8 +705,7 @@ def show_running_config(line_id, groups, users):
     if users:
         cmd_args.append('--users')
     retcode, stdout, stderr = _run_status_cmd(cmd_args)
-    if stdout:
-        click.echo(stdout, nl=False)
+    _display_show_output(stdout, show_groups=groups, show_users=users)
     if retcode != 0 and stderr.strip():
         click.echo(stderr, err=True)
 
@@ -646,8 +723,7 @@ def show_startup_config(line_id, groups, users):
     if users:
         cmd_args.append('--users')
     retcode, stdout, stderr = _run_status_cmd(cmd_args)
-    if stdout:
-        click.echo(stdout, nl=False)
+    _display_show_output(stdout, show_groups=groups, show_users=users)
     if retcode != 0 and stderr.strip():
         click.echo(stderr, err=True)
 
