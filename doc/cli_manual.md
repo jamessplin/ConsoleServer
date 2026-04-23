@@ -93,6 +93,11 @@ For an existing entry, if a parameter is not specified, its current value is ret
 | --idle-timeout | 600 |
 | --label | none |
 
+| Feature | Label |
+|---|---|
+| Max Length | 16 characters |
+| Case Sensitivity | Case-sensitive |
+
 ### **Usage Guidelines**
 Use this command to control how users interact with a serial line, such as setting the write-access mode and connection limits. Changes are applied to the running configuration and applied dynamically.
 **Note:** Changing the `--mode` or `--max-clients` options will restart the serial port service, disconnecting any active clients on that line.

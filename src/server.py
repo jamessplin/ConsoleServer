@@ -265,6 +265,44 @@ class SerialDaemon:
         info = self.config.get("info", {})
         self.user_limit = info.get("no_of_user", 32)
         self.group_limit = info.get("no_of_group", 32)
+        self.port_limit = info.get("no_of_port")
+
+        # Validate startup config against configured port limit.
+        self._validate_existing_group_ports()
+
+    def _get_port_limit(self) -> Optional[int]:
+        """Return configured no_of_port as an int, or None if not configured/invalid."""
+        try:
+            limit = int(self.port_limit)
+        except Exception:
+            return None
+        return limit if limit >= 1 else None
+
+    def _validate_group_port_list(self, ports) -> Optional[str]:
+        """Validate group port_list entries against info.no_of_port."""
+        limit = self._get_port_limit()
+        if limit is None:
+            return None
+
+        if not isinstance(ports, list):
+            return "ports must be a list"
+
+        for p in ports:
+            try:
+                port_num = int(p)
+            except Exception:
+                return f"invalid port '{p}': must be an integer between 1 and {limit}"
+            if port_num < 1 or port_num > limit:
+                return f"invalid port '{port_num}': must be between 1 and {limit}"
+        return None
+
+    def _validate_existing_group_ports(self):
+        """Validate all configured groups on startup; log if any ports exceed no_of_port."""
+        groups = (self.config or {}).get("groups", {})
+        for groupname, group_data in groups.items():
+            err = self._validate_group_port_list(group_data.get("port_list", []))
+            if err:
+                raise ValueError(f"Invalid config for group '{groupname}': {err}")
 
     def _load_config(self):
         """Loads configuration from the json file."""
@@ -1100,6 +1138,10 @@ class SerialDaemon:
 
                     # Now, apply any values that were actually passed in the command
                     if "ports" in msg:
+                        port_list_error = self._validate_group_port_list(msg["ports"])
+                        if port_list_error:
+                            await self._send(writer, {"op": "error", "msg": port_list_error})
+                            continue
                         group_data["port_list"] = msg["ports"]
                     if "role" in msg:
                         group_data["role"] = msg["role"]
