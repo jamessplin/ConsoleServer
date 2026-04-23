@@ -12,7 +12,8 @@
 - [3.1. console-cli show running-config](#31-console-cli-show-running-config)
 - [3.2. console-cli show startup-config](#32-console-cli-show-startup-config)
 - [3.3. console-cli show sessions](#33-console-cli-show-sessions)
-- [3.4. console-cli connect](#34-console-cli-connect)
+- [3.4. console-cli show product-info](#34-console-cli-show-product-info)
+- [3.5. console-cli connect](#35-console-cli-connect)
 
 ---
 
@@ -437,7 +438,56 @@ Daemon Sessions:
 - `[timeout=Ns, left=Ns]`: If an idle timeout is configured for the line, this shows the total timeout duration and the remaining time before the client is disconnected due to inactivity.
 
 ---
-### 3.4. console-cli connect
+
+### 3.4. console-cli show product-info
+**Required Privilege:** operator or higher (console-server, admin)
+
+This command displays product information, including deployment-specific settings such as the base port and resource limits.
+
+```bash
+console-cli show product-info [--json]
+```
+
+### **Parameters**
+| Parameter | Description |
+|---|---|
+| **--json** | Optional. Outputs raw JSON. If omitted, CLI-friendly table format is used. |
+
+### **Usage Guidelines**
+Use this command to view deployment configuration metadata, such as the base port number and the configured limits for users, groups, and serial ports. This information is read from the `config.json` file and represents the hardware and software constraints for the current deployment.
+
+### **Example**
+```bash
+# Show product information in table format
+> console-cli show product-info
+Key             Value
+---             -----
+base_port       35000
+no_of_group     16
+no_of_port      24
+no_of_user      16
+
+# Show product information as raw JSON
+> console-cli show product-info --json
+{
+  "info": {
+    "base_port": 35000,
+    "no_of_user": 16,
+    "no_of_group": 16,
+    "no_of_port": 24
+  }
+}
+```
+
+### **Output Field Descriptions**
+- `base_port`: The base port number used for serial connections (typically 35000).
+- `no_of_user`: The maximum number of users that can be configured in this deployment.
+- `no_of_group`: The maximum number of user groups that can be configured in this deployment.
+- `no_of_port`: The maximum number of serial ports available in this deployment.
+
+---
+
+### 3.5. console-cli connect
 **Required Privilege:** operator or higher (console-server, admin)
 
 This command connects the user's terminal to a specific serial line, allowing direct interaction with the connected device.

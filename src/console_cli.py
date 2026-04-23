@@ -297,6 +297,19 @@ def _print_table(headers, rows):
         click.echo("  ".join(row[i].ljust(widths[i]) for i in range(len(headers))))
 
 
+def _render_product_info_as_table(info_data):
+    """Render the product info as a table."""
+    if not isinstance(info_data, dict) or not info_data:
+        return False
+
+    rows = []
+    for key in sorted(info_data.keys()):
+        value = info_data.get(key)
+        rows.append([key, value])
+    _print_table(["Key", "Value"], rows)
+    return True
+
+
 def _render_config_section_as_table(config_data, section_name):
     if section_name == "users":
         users = config_data.get("users", {})
@@ -824,6 +837,29 @@ def show_sessions_cmd(line_id, output_json):
     retcode, stdout, stderr = _run_status_cmd(cmd_args)
     if stdout:
         click.echo(stdout, nl=False)
+    if retcode != 0 and stderr.strip():
+        click.echo(stderr, err=True)
+
+@show.command(name='product-info')
+@click.option('--json', 'output_json', is_flag=True, help='Output raw JSON.')
+def show_product_info(output_json):
+    """Displays product information (base_port, limits, etc.)."""
+    cmd_args = ['show-product-info']
+    retcode, stdout, stderr = _run_status_cmd(cmd_args)
+
+    if output_json or retcode != 0:
+        # For JSON output or errors, show raw output
+        if stdout:
+            click.echo(stdout, nl=False)
+    else:
+        # For table format, parse and render
+        if stdout:
+            try:
+                info_data = json.loads(stdout)
+                _render_product_info_as_table(info_data)
+            except Exception:
+                click.echo(stdout, nl=False)
+
     if retcode != 0 and stderr.strip():
         click.echo(stderr, err=True)
 

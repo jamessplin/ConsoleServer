@@ -213,6 +213,10 @@ async def main():
     sp_show_startup.add_argument("--users", action="store_true", help="display users configuration")
     sp_show_startup.add_argument("-q", "--quiet", action="store_true", help="suppress output (ignored)")
 
+    # New subparser for show-product-info
+    sp_show_product_info = subparsers.add_parser("show-product-info", help="show product information")
+    sp_show_product_info.add_argument("-q", "--quiet", action="store_true", help="suppress output (ignored)")
+
     # New subparser for save-config
     sp_save_config = subparsers.add_parser("save-config", help="save running-config to startup-config")
     sp_save_config.add_argument("-q", "--quiet", action="store_true", help="suppress output (ignored)")
@@ -290,6 +294,32 @@ async def main():
             write_stdout(pretty.encode() + b"\n")
         else:
             write_stdout((f"[Failed to fetch config: {response.get('msg','unknown error')}]\r\n").encode())
+        sys.exit(0)
+
+    if args.command == "show-product-info":
+        msg = {"op": "product-info"}
+        reader, writer = await asyncio.open_connection(args.host, args.port)
+        writer.write(json.dumps(msg).encode() + b"\n")
+        await writer.drain()
+        line = await reader.readline()
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except Exception:
+            pass
+
+        try:
+            response = json.loads(line.decode())
+        except Exception:
+            response = {"op": "error", "msg": "invalid response"}
+
+        if response.get("op") == "product-info":
+            import json as _json
+            data = response.get("data", {})
+            pretty = _json.dumps(data, indent=2)
+            write_stdout(pretty.encode() + b"\n")
+        else:
+            write_stdout((f"[Failed to fetch product info: {response.get('msg','unknown error')}]\r\n").encode())
         sys.exit(0)
 
     if args.command == "save-config":

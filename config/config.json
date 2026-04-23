@@ -1,8 +1,9 @@
 {
   "info": {
     "base_port": 35000,
-    "no_of_user": 5,
-    "no_of_group": 5
+    "no_of_user": 16,
+    "no_of_group": 16,
+    "no_of_port": 24
   },
   "listen": {
     "host": "127.0.0.1",
@@ -481,9 +482,9 @@
       "fakeserial": false,
       "ser2net_host": "127.0.0.1",
       "ser2net_port": 50024,
-      "device": "/dev/ttyXRUSB23",
+      "device": "/dev/ttyUSB0",
       "ser2net_config": "ser2net_cfg/cs24.yaml",
-      "baudrate": 115200,
+      "baudrate": 57600,
       "databits": 8,
       "stopbits": 1,
       "parity": "none",

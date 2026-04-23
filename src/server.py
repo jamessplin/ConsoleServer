@@ -767,6 +767,13 @@ class SerialDaemon:
                     await self._send(writer, {"op": op, "config": response_config})
                     continue
 
+                # Handle 'product-info' operation
+                if op == "product-info":
+                    config_source = self.config
+                    info_data = config_source.get("info", {})
+                    await self._send(writer, {"op": "product-info", "data": info_data})
+                    continue
+
                 # Handle 'attach' operation: client requests to attach to a line
                 if op == "attach":
                     line_id = int(msg.get("line", 1))
