@@ -43,7 +43,7 @@ cleanup() {
     done
 
     echov "--- Verifying cleanup ---"
-    $CONSOLE_CLI show running-config --users
+    $CONSOLE_CLI show running-config --users --json
 
     echov "Cleanup complete."
 }
@@ -56,7 +56,7 @@ echov "--- Running CLI tests for user limits ---"
 
 # 1. Get the user limit from the running configuration
 echov "[Step 1] Checking 'no_of_user' limit from running config..."
-USER_LIMIT=$($CONSOLE_CLI show running-config | grep '"no_of_user"' | awk -F': ' '{print $2}' | tr -d ',')
+USER_LIMIT=$($CONSOLE_CLI show running-config --json | grep '"no_of_user"' | awk -F': ' '{print $2}' | tr -d ',')
 echov "User limit is set to: $USER_LIMIT"
 
 if ! [[ "$USER_LIMIT" =~ ^[0-9]+$ ]]; then
@@ -66,9 +66,9 @@ fi
 
 # 2. Get the current number of users
 echov "[Step 2] Checking initial number of users..."
-INITIAL_USER_COUNT=$($CONSOLE_CLI show running-config --users | grep -c '"groups":')
+INITIAL_USER_COUNT=$($CONSOLE_CLI show running-config --users --json | grep -c '"groups":')
 echov "Initial user count: $INITIAL_USER_COUNT"
-$CONSOLE_CLI show running-config --users
+$CONSOLE_CLI show running-config --users --json
 
 # 3. Add users up to the limit + 1, verifying the last one fails
 USERS_TO_ADD=$((USER_LIMIT - INITIAL_USER_COUNT))
@@ -114,7 +114,7 @@ if [ "$LIMIT_REACHED_SUCCESS" = false ]; then
 fi
 
 echov "Final user list before cleanup:"
-echov "$($CONSOLE_CLI show running-config --users)"
+echov "$($CONSOLE_CLI show running-config --users --json)"
 
 # 4. Cleanup is handled by the trap on EXIT
 echov "--- All tests passed successfully! ---"

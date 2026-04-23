@@ -43,7 +43,7 @@ cleanup() {
     done
 
     echov "--- Verifying cleanup ---"
-    $CONSOLE_CLI show running-config --groups
+    $CONSOLE_CLI show running-config --groups --json
 
     echov "Cleanup complete."
 }
@@ -56,7 +56,7 @@ echov "--- Running CLI tests for group limits ---"
 
 # 1. Get the group limit from the running configuration
 echov "[Step 1] Checking 'no_of_group' limit from running config..."
-GROUP_LIMIT=$($CONSOLE_CLI show running-config | grep '"no_of_group"' | awk -F': ' '{print $2}' | tr -d ',')
+GROUP_LIMIT=$($CONSOLE_CLI show running-config --json | grep '"no_of_group"' | awk -F': ' '{print $2}' | tr -d ',')
 echov "Group limit is set to: $GROUP_LIMIT"
 
 if ! [[ "$GROUP_LIMIT" =~ ^[0-9]+$ ]]; then
@@ -66,9 +66,9 @@ fi
 
 # 2. Get the current number of groups
 echov "[Step 2] Checking initial number of groups..."
-INITIAL_GROUP_COUNT=$($CONSOLE_CLI show running-config --groups | grep -c '"port_list":')
+INITIAL_GROUP_COUNT=$($CONSOLE_CLI show running-config --groups --json | grep -c '"port_list":')
 echov "Initial group count: $INITIAL_GROUP_COUNT"
-$CONSOLE_CLI show running-config --groups
+$CONSOLE_CLI show running-config --groups --json
 
 # 3. Add groups up to the limit + 1, verifying the last one fails
 GROUPS_TO_ADD=$((GROUP_LIMIT - INITIAL_GROUP_COUNT))
@@ -114,7 +114,7 @@ if [ "$LIMIT_REACHED_SUCCESS" = false ]; then
 fi
 
 echov "Final group list before cleanup:"
-echov "$($CONSOLE_CLI show running-config --groups)"
+echov "$($CONSOLE_CLI show running-config --groups --json)"
 
 echov "--- All tests passed successfully! ---"
 echov "Cleanup will run automatically."

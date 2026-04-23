@@ -29,7 +29,7 @@ PORT=10
 
 # Step 0: Validate --line all selector
 echov "[STEP 0] Validating --line all selector..."
-ALL_LINES_CONFIG=$(console-cli show running-config --line all)
+ALL_LINES_CONFIG=$(console-cli show running-config --line all --json)
 if [ "$VERBOSE" = true ]; then
     echo "$ALL_LINES_CONFIG"
 fi
@@ -52,7 +52,7 @@ fi
 
 # Step 1: Show and save current config
 echov "[STEP 1] Saving current config for line $PORT..."
-ORIG_CONFIG=$(console-cli show running-config --line $PORT)
+ORIG_CONFIG=$(console-cli show running-config --line $PORT --json)
 if [ "$VERBOSE" = true ]; then
   echo "$ORIG_CONFIG"
 fi
@@ -113,7 +113,7 @@ console-cli config port $PORT \
 
 # Step 3: Verify changes
 echov "[STEP 3] Verifying changed config..."
-NEW_CONFIG=$(console-cli show running-config --line $PORT)
+NEW_CONFIG=$(console-cli show running-config --line $PORT --json)
 if [ "$VERBOSE" = true ]; then
   echo "$NEW_CONFIG"
 fi
@@ -145,7 +145,7 @@ console-cli config port $PORT \
 
 # Step 5: Verify revert
 echov "[STEP 5] Verifying reverted config..."
-REVERTED_CONFIG=$(console-cli show running-config --line $PORT)
+REVERTED_CONFIG=$(console-cli show running-config --line $PORT --json)
 if [ "$VERBOSE" = true ]; then
   echo "$REVERTED_CONFIG"
 fi

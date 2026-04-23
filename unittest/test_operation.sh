@@ -25,7 +25,7 @@ PORT=1
 
 # Step 1: Show and save current operation config
 echov "[STEP 1] Saving current operation config for line $PORT..."
-ORIG_CONFIG=$(console-cli show running-config --line $PORT)
+ORIG_CONFIG=$(console-cli show running-config --line $PORT --json)
 if [ "$VERBOSE" = true ]; then
     echo "$ORIG_CONFIG"
 fi
@@ -77,7 +77,7 @@ console-cli config operation $PORT \
 
 # Step 3: Verify changes
 echov "[STEP 3] Verifying changed operation config..."
-NEW_CONFIG=$(console-cli show running-config --line $PORT)
+NEW_CONFIG=$(console-cli show running-config --line $PORT --json)
 if [ "$VERBOSE" = true ]; then
     echo "$NEW_CONFIG"
 fi
@@ -107,7 +107,7 @@ console-cli config operation $PORT \
 
 # Step 5: Verify revert
 echov "[STEP 5] Verifying reverted operation config..."
-REVERTED_CONFIG=$(console-cli show running-config --line $PORT)
+REVERTED_CONFIG=$(console-cli show running-config --line $PORT --json)
 if [ "$VERBOSE" = true ]; then
     echo "$REVERTED_CONFIG"
 fi
