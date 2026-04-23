@@ -34,9 +34,10 @@ if [ "$VERBOSE" = true ]; then
     echo "$ALL_LINES_CONFIG"
 fi
 if ! echo "$ALL_LINES_CONFIG" | grep -q '"lines"'; then
-    echo "[ERROR] --line all did not return a lines object" >&2
+    echov "[FAIL] --line all did not return a lines object"
     exit 1
 fi
+echov "[OK] --line all returned a lines object"
 
 # Step 0b: Validate --json output format
 echov "[STEP 0b] Validating --json output format..."
@@ -45,9 +46,10 @@ if [ "$VERBOSE" = true ]; then
     echo "$ALL_LINES_JSON"
 fi
 if ! echo "$ALL_LINES_JSON" | grep -q '"lines"'; then
-    echo "[ERROR] --json output did not return expected JSON content" >&2
+    echov "[FAIL] --json output did not return expected JSON content"
     exit 1
 fi
+echov "[OK] --json output returned expected JSON content"
 
 
 # Step 1: Show and save current config
@@ -56,13 +58,11 @@ ORIG_CONFIG=$(console-cli show running-config --line $PORT --json)
 if [ "$VERBOSE" = true ]; then
   echo "$ORIG_CONFIG"
 fi
-echo "$ORIG_CONFIG" > orig_line${PORT}_config.json
 
-
-# Extract original values using grep/awk
+# Extract original values using grep/awk directly from the variable
 get_val() {
     local key="$1"
-    grep "\"$key\"" orig_line${PORT}_config.json | awk -F: '{gsub(/[",]/, "", $2); print $2}' | xargs
+    echo "$ORIG_CONFIG" | grep "\"$key\"" | awk -F: '{gsub(/[",]/, "", $2); print $2}' | xargs
 }
 
 # Helper to pick a new value different from the original
@@ -117,15 +117,14 @@ NEW_CONFIG=$(console-cli show running-config --line $PORT --json)
 if [ "$VERBOSE" = true ]; then
   echo "$NEW_CONFIG"
 fi
-echo "$NEW_CONFIG" > new_line${PORT}_config.json
 check_val() {
     local key="$1" expected="$2"
-    actual=$(grep '"'$key'"' new_line${PORT}_config.json | awk -F: '{gsub(/[",]/, "", $2); print $2}' | xargs)
+    actual=$(echo "$NEW_CONFIG" | grep "\"$key\"" | awk -F: '{gsub(/[",]/, "", $2); print $2}' | xargs)
     if [ "$actual" != "$expected" ]; then
-        echo "[ERROR] $key: expected $expected, got $actual" >&2
+        echov "[FAIL] $key: expected $expected, got $actual"
         exit 1
     else
-        echo "[OK] $key set to $actual"
+        echov "[OK] $key = $actual"
     fi
 }
 check_val baudrate "$NEW_BAUD"
@@ -149,15 +148,14 @@ REVERTED_CONFIG=$(console-cli show running-config --line $PORT --json)
 if [ "$VERBOSE" = true ]; then
   echo "$REVERTED_CONFIG"
 fi
-echo "$REVERTED_CONFIG" > reverted_line${PORT}_config.json
 check_val_revert() {
     local key="$1" expected="$2"
-    actual=$(grep '"'$key'"' reverted_line${PORT}_config.json | awk -F: '{gsub(/[",]/, "", $2); print $2}' | xargs)
+    actual=$(echo "$REVERTED_CONFIG" | grep "\"$key\"" | awk -F: '{gsub(/[",]/, "", $2); print $2}' | xargs)
     if [ "$actual" != "$expected" ]; then
-        echo "[ERROR] (revert) $key: expected $expected, got $actual" >&2
+        echov "[FAIL] (revert) $key: expected $expected, got $actual"
         exit 1
     else
-        echo "[OK] (revert) $key set to $actual"
+        echov "[OK] (revert) $key = $actual"
     fi
 }
 check_val_revert baudrate "$ORIG_BAUD"
@@ -166,7 +164,4 @@ check_val_revert parity "$ORIG_PARITY"
 check_val_revert stopbits "$ORIG_STOPBITS"
 check_val_revert flowcontrol "$ORIG_FLOW"
 
-echov "Test complete."
-
-# Cleanup temporary files
-rm -f orig_line${PORT}_config.json new_line${PORT}_config.json reverted_line${PORT}_config.json
+echov "--- All tests passed successfully! ---"

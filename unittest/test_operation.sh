@@ -29,12 +29,11 @@ ORIG_CONFIG=$(console-cli show running-config --line $PORT --json)
 if [ "$VERBOSE" = true ]; then
     echo "$ORIG_CONFIG"
 fi
-echo "$ORIG_CONFIG" > orig_op_line${PORT}_config.json
 
-# Extract original values using grep/awk
+# Extract original values using grep/awk directly from the variable
 get_val() {
     local key="$1"
-    grep "^[[:space:]]*\"$key\"" orig_op_line${PORT}_config.json | awk -F: '{gsub(/[",]/, "", $2); print $2}' | xargs
+    echo "$ORIG_CONFIG" | grep "\"$key\"" | awk -F: '{gsub(/[",]/, "", $2); print $2}' | xargs
 }
 
 # Helper to pick a new value different from the original
@@ -81,15 +80,14 @@ NEW_CONFIG=$(console-cli show running-config --line $PORT --json)
 if [ "$VERBOSE" = true ]; then
     echo "$NEW_CONFIG"
 fi
-echo "$NEW_CONFIG" > new_op_line${PORT}_config.json
 check_val() {
     local key="$1" expected="$2"
-    actual=$(grep "^[[:space:]]*\"$key\"" new_op_line${PORT}_config.json | awk -F: '{gsub(/[",]/, "", $2); print $2}' | xargs)
+    actual=$(echo "$NEW_CONFIG" | grep "\"$key\"" | awk -F: '{gsub(/[",]/, "", $2); print $2}' | xargs)
     if [ "$actual" != "$expected" ]; then
-        echov "[ERROR] $key: expected $expected, got $actual"
+        echov "[FAIL] $key: expected $expected, got $actual"
         exit 1
     else
-        echov "[OK] $key set to $actual"
+        echov "[OK] $key = $actual"
     fi
 }
 check_val mode "$NEW_MODE"
@@ -111,15 +109,14 @@ REVERTED_CONFIG=$(console-cli show running-config --line $PORT --json)
 if [ "$VERBOSE" = true ]; then
     echo "$REVERTED_CONFIG"
 fi
-echo "$REVERTED_CONFIG" > reverted_op_line${PORT}_config.json
 check_val_revert() {
     local key="$1" expected="$2"
-    actual=$(grep "^[[:space:]]*\"$key\"" reverted_op_line${PORT}_config.json | awk -F: '{gsub(/[",]/, "", $2); print $2}' | xargs)
+    actual=$(echo "$REVERTED_CONFIG" | grep "\"$key\"" | awk -F: '{gsub(/[",]/, "", $2); print $2}' | xargs)
     if [ "$actual" != "$expected" ]; then
-        echov "[ERROR] (revert) $key: expected $expected, got $actual"
+        echov "[FAIL] (revert) $key: expected $expected, got $actual"
         exit 1
     else
-        echov "[OK] (revert) $key set to $actual"
+        echov "[OK] (revert) $key = $actual"
     fi
 }
 check_val_revert mode "$ORIG_MODE"
@@ -127,7 +124,4 @@ check_val_revert max_clients "$ORIG_MAX_CLIENTS"
 check_val_revert idle_timeout "$ORIG_IDLE_TIMEOUT"
 check_val_revert label "$ORIG_LABEL"
 
-echov "Test complete."
-
-# Cleanup temporary files
-rm -f orig_op_line${PORT}_config.json new_op_line${PORT}_config.json reverted_op_line${PORT}_config.json
+echov "--- All tests passed successfully! ---"
