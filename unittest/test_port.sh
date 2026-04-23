@@ -27,6 +27,29 @@ set -e
 PORT=10
 
 
+# Step 0: Validate --line all selector
+echov "[STEP 0] Validating --line all selector..."
+ALL_LINES_CONFIG=$(console-cli show running-config --line all)
+if [ "$VERBOSE" = true ]; then
+    echo "$ALL_LINES_CONFIG"
+fi
+if ! echo "$ALL_LINES_CONFIG" | grep -q '"lines"'; then
+    echo "[ERROR] --line all did not return a lines object" >&2
+    exit 1
+fi
+
+# Step 0b: Validate --json output format
+echov "[STEP 0b] Validating --json output format..."
+ALL_LINES_JSON=$(console-cli show running-config --line all --json)
+if [ "$VERBOSE" = true ]; then
+    echo "$ALL_LINES_JSON"
+fi
+if ! echo "$ALL_LINES_JSON" | grep -q '"lines"'; then
+    echo "[ERROR] --json output did not return expected JSON content" >&2
+    exit 1
+fi
+
+
 # Step 1: Show and save current config
 echov "[STEP 1] Saving current config for line $PORT..."
 ORIG_CONFIG=$(console-cli show running-config --line $PORT)

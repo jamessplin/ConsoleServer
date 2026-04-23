@@ -293,15 +293,16 @@ console-cli config group delete <groupname>
 This command displays the current, active (in-memory) configuration of the `seriald` server.
 
 ```bash
-console-cli show running-config [--line <line_id_or_label>] [--groups] [--users]
+console-cli show running-config [--line <line_id_or_label>] [--groups] [--users] [--json]
 ```
 
 ### **Parameters**
 | Parameter | Description |
 |---|---|
-| **--line** | Optional. Displays the configuration for a specific serial line, identified by its number (e.g., `5`) or its label (e.g., `"Backup Console"`). |
+| **--line** | Optional. Displays the configuration for a specific serial line, identified by its number (e.g., `5`) or its label (e.g., `"Backup Console"`). Use `all` to display all lines only. |
 | **--groups** | Optional. Displays only the `groups` section of the configuration. |
 | **--users** | Optional. Displays only the `users` section of the configuration. |
+| **--json** | Optional. Outputs raw JSON. If omitted, CLI-friendly output is used. |
 
 ### **Usage Guidelines**
 Use this command to view the live configuration. By default, it displays the entire configuration. Use the options to filter for specific sections.
@@ -316,6 +317,12 @@ Use this command to view the live configuration. By default, it displays the ent
 
 # Show the configuration for the line labeled "Backup Console"
 > console-cli show running-config --line "Backup Console"
+
+# Show all line entries only
+> console-cli show running-config --line all
+
+# Show all line entries as raw JSON
+> console-cli show running-config --line all --json
 
 # Show only the groups configuration
 > console-cli show running-config --groups
@@ -332,15 +339,16 @@ Use this command to view the live configuration. By default, it displays the ent
 This command displays the saved configuration from `config.json` that will be loaded when the `seriald` server starts.
 
 ```bash
-console-cli show startup-config [--line <line_id_or_label>] [--groups] [--users]
+console-cli show startup-config [--line <line_id_or_label>] [--groups] [--users] [--json]
 ```
 
 ### **Parameters**
 | Parameter | Description |
 |---|---|
-| **--line** | Optional. Displays the configuration for a specific serial line, identified by its number (e.g., `5`) or its label (e.g., `"Backup Console"`). |
+| **--line** | Optional. Displays the configuration for a specific serial line, identified by its number (e.g., `5`) or its label (e.g., `"Backup Console"`). Use `all` to display all lines only. |
 | **--groups** | Optional. Displays only the `groups` section of the configuration. |
 | **--users** | Optional. Displays only the `users` section of the configuration. |
+| **--json** | Optional. Outputs raw JSON. If omitted, CLI-friendly output is used. |
 
 ### **Usage Guidelines**
 Use this command to verify the configuration that will be applied after a reboot or service restart. By default, it displays the entire configuration.
@@ -352,6 +360,12 @@ Use this command to verify the configuration that will be applied after a reboot
 
 # Show the startup configuration for line 5
 > console-cli show startup-config --line 5
+
+# Show all startup line entries only
+> console-cli show startup-config --line all
+
+# Show startup line entries as raw JSON
+> console-cli show startup-config --line all --json
 
 # Show only the groups section of the startup configuration
 > console-cli show startup-config --groups
@@ -365,13 +379,14 @@ Use this command to verify the configuration that will be applied after a reboot
 This command displays active client sessions connected to the `seriald` server.
 
 ```bash
-console-cli show sessions [--line <line_id>]
+console-cli show sessions [--line <line_id>] [--json]
 ```
 
 ### **Parameters**
 | Parameter | Description |
 |---|---|
 | **--line** | Optional. Filters the output to show session details only for a specific serial line number. |
+| **--json** | Optional. Outputs raw JSON. If omitted, CLI-friendly output is used. |
 
 ### **Usage Guidelines**
 Use this command to get a real-time view of all connected clients. It provides details on which user is connected to which line, their role (writer or observer), and their connection information. This is useful for monitoring server activity and troubleshooting connection issues.
@@ -380,6 +395,9 @@ Use this command to get a real-time view of all connected clients. It provides d
 ```bash
 # Show all active sessions across all lines
 > console-cli show sessions
+
+# Show all active sessions as raw JSON
+> console-cli show sessions --json
 
 Daemon Sessions:
 - line 1 [exclusive] : writer=ted (clients=3, writers=1, observers=2)

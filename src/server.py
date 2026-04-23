@@ -684,23 +684,29 @@ class SerialDaemon:
                     config_source = self.config if op == "config" else self._load_config()
 
                     line_id_or_label = msg.get("line")
+                    if isinstance(line_id_or_label, str):
+                        line_id_or_label = line_id_or_label.strip()
                     show_groups = msg.get("groups")
                     show_users = msg.get("users")
 
                     response_config = {}
 
                     if line_id_or_label:
-                        found_line = None
-                        # Try to match by line ID (number)
-                        if line_id_or_label in config_source.get("lines", {}):
-                            found_line = {line_id_or_label: config_source["lines"][line_id_or_label]}
+                        if isinstance(line_id_or_label, str) and line_id_or_label.lower() == "all":
+                            response_config = {"lines": dict(config_source.get("lines", {}))}
                         else:
-                            # Try to match by label
-                            for line_id, line_data in config_source.get("lines", {}).items():
-                                if line_data.get("label") == line_id_or_label:
-                                    found_line = {line_id: line_data}
-                                    break
-                        response_config = {"lines": found_line} if found_line else {"lines": {}}
+                            found_line = None
+                            line_key = str(line_id_or_label)
+                            # Try to match by line ID (number)
+                            if line_key in config_source.get("lines", {}):
+                                found_line = {line_key: config_source["lines"][line_key]}
+                            else:
+                                # Try to match by label
+                                for line_id, line_data in config_source.get("lines", {}).items():
+                                    if line_data.get("label") == line_id_or_label:
+                                        found_line = {line_id: line_data}
+                                        break
+                            response_config = {"lines": found_line} if found_line else {"lines": {}}
                     elif show_groups:
                         response_config = {"groups": config_source.get("groups", {})}
                     elif show_users:

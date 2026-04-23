@@ -154,6 +154,17 @@ async def send_config_update(host: str, port: int, msg: dict, expected_op: str =
             pass
     return False, "unknown error"
 
+
+def normalize_line_selector(line_id):
+    if line_id is None:
+        return None
+    normalized = str(line_id).strip()
+    if not normalized:
+        return None
+    if normalized.lower() == "all":
+        return "all"
+    return normalized
+
 async def main():
     global _quiet_mode
     import argparse
@@ -165,6 +176,7 @@ async def main():
 
     sp_sessions = subparsers.add_parser("sessions", help="show daemon sessions")
     sp_sessions.add_argument("--line", type=int, help="filter by line ID")
+    sp_sessions.add_argument("--json", action="store_true", help="output raw JSON")
     sp_config = subparsers.add_parser("config", help="show config.json from server")
     sp_user_role = subparsers.add_parser("user-role", help="show effective role for user")
     sp_user_role.add_argument("username", metavar="USERNAME", help="username to query")
@@ -190,13 +202,13 @@ async def main():
 
     # New subparsers for show-running-config and show-startup-config
     sp_show_running = subparsers.add_parser("show-running-config", help="show running configuration")
-    sp_show_running.add_argument("--line", dest="line_id", type=str, help="display config for a specific line (ID or label)")
+    sp_show_running.add_argument("--line", dest="line_id", type=str, help="display config for a specific line (ID/label) or all")
     sp_show_running.add_argument("--groups", action="store_true", help="display groups configuration")
     sp_show_running.add_argument("--users", action="store_true", help="display users configuration")
     sp_show_running.add_argument("-q", "--quiet", action="store_true", help="suppress output (ignored)")
 
     sp_show_startup = subparsers.add_parser("show-startup-config", help="show startup configuration")
-    sp_show_startup.add_argument("--line", dest="line_id", type=str, help="display config for a specific line (ID or label)")
+    sp_show_startup.add_argument("--line", dest="line_id", type=str, help="display config for a specific line (ID/label) or all")
     sp_show_startup.add_argument("--groups", action="store_true", help="display groups configuration")
     sp_show_startup.add_argument("--users", action="store_true", help="display users configuration")
     sp_show_startup.add_argument("-q", "--quiet", action="store_true", help="suppress output (ignored)")
@@ -234,7 +246,12 @@ async def main():
 
     if args.command == "sessions":
         st = await get_status(args.host, args.port, line_id=args.line)
-        write_stdout(render_status(st))
+        if args.json:
+            import json as _json
+            pretty = _json.dumps(st, indent=2)
+            write_stdout(pretty.encode() + b"\n")
+        else:
+            write_stdout(render_status(st))
         return
 
     if args.command == "config":
@@ -244,8 +261,9 @@ async def main():
     if args.command in ["show-running-config", "show-startup-config"]:
         op = "config" if args.command == "show-running-config" else "startup-config"
         msg = {"op": op}
-        if args.line_id:
-            msg["line"] = args.line_id
+        line_selector = normalize_line_selector(args.line_id)
+        if line_selector:
+            msg["line"] = line_selector
         if args.groups:
             msg["groups"] = True
         if args.users:

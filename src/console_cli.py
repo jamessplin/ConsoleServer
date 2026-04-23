@@ -350,6 +350,17 @@ def _display_show_output(stdout, *, show_groups=False, show_users=False):
 
     click.echo(stdout, nl=False)
 
+
+def _normalize_line_selector(line_id):
+    if line_id is None:
+        return None
+    normalized = str(line_id).strip()
+    if not normalized:
+        return None
+    if normalized.lower() == "all":
+        return "all"
+    return normalized
+
 def get_user_and_role():
     try:
         user = pwd.getpwuid(os.getuid()).pw_name
@@ -692,48 +703,63 @@ def show():
     pass
 
 @show.command(name='running-config')
-@click.option('--line', 'line_id', help='Display config for a specific line (ID or label).')
+@click.option('--line', 'line_id', help='Display config for a specific line (ID/label) or all.')
 @click.option('--groups', is_flag=True, help='Display groups configuration.')
 @click.option('--users', is_flag=True, help='Display users configuration.')
-def show_running_config(line_id, groups, users):
+@click.option('--json', 'output_json', is_flag=True, help='Output raw JSON.')
+def show_running_config(line_id, groups, users, output_json):
     """Displays the current, active (in-memory) configuration."""
     cmd_args = ['show-running-config']
-    if line_id:
-        cmd_args.extend(['--line', line_id])
+    normalized_line_id = _normalize_line_selector(line_id)
+    if normalized_line_id:
+        cmd_args.extend(['--line', normalized_line_id])
     if groups:
         cmd_args.append('--groups')
     if users:
         cmd_args.append('--users')
     retcode, stdout, stderr = _run_status_cmd(cmd_args)
-    _display_show_output(stdout, show_groups=groups, show_users=users)
+    if output_json:
+        if stdout:
+            click.echo(stdout, nl=False)
+    else:
+        _display_show_output(stdout, show_groups=groups, show_users=users)
     if retcode != 0 and stderr.strip():
         click.echo(stderr, err=True)
 
 @show.command(name='startup-config')
-@click.option('--line', 'line_id', help='Display config for a specific line (ID or label).')
+@click.option('--line', 'line_id', help='Display config for a specific line (ID/label) or all.')
 @click.option('--groups', is_flag=True, help='Display groups configuration.')
 @click.option('--users', is_flag=True, help='Display users configuration.')
-def show_startup_config(line_id, groups, users):
+@click.option('--json', 'output_json', is_flag=True, help='Output raw JSON.')
+def show_startup_config(line_id, groups, users, output_json):
     """Displays the saved (startup) configuration."""
     cmd_args = ['show-startup-config']
-    if line_id:
-        cmd_args.extend(['--line', line_id])
+    normalized_line_id = _normalize_line_selector(line_id)
+    if normalized_line_id:
+        cmd_args.extend(['--line', normalized_line_id])
     if groups:
         cmd_args.append('--groups')
     if users:
         cmd_args.append('--users')
     retcode, stdout, stderr = _run_status_cmd(cmd_args)
-    _display_show_output(stdout, show_groups=groups, show_users=users)
+    if output_json:
+        if stdout:
+            click.echo(stdout, nl=False)
+    else:
+        _display_show_output(stdout, show_groups=groups, show_users=users)
     if retcode != 0 and stderr.strip():
         click.echo(stderr, err=True)
 
 @show.command(name='sessions')
 @click.option('--line', 'line_id', type=int, help='Filter sessions for a specific line ID.')
-def show_sessions_cmd(line_id):
+@click.option('--json', 'output_json', is_flag=True, help='Output raw JSON.')
+def show_sessions_cmd(line_id, output_json):
     """Displays active client sessions."""
     cmd_args = ['sessions']
     if line_id is not None:
         cmd_args.extend(['--line', str(line_id)])
+    if output_json:
+        cmd_args.append('--json')
     retcode, stdout, stderr = _run_status_cmd(cmd_args)
     if stdout:
         click.echo(stdout, nl=False)
