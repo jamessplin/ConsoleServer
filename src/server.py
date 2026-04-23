@@ -85,6 +85,17 @@ def validate_groupname(groupname: str) -> Optional[str]:
         return f"groupname must be <= {GROUPNAME_MAX_LENGTH} characters"
     return None
 
+
+LABEL_MAX_LENGTH = 16
+
+def validate_label(label: str) -> Optional[str]:
+    if not isinstance(label, str):
+        return "label must be a string"
+    if len(label) > LABEL_MAX_LENGTH:
+        return f"label must be <= {LABEL_MAX_LENGTH} characters"
+    return None
+
+
 def get_effective_role(username: str, config) -> Optional[str]:
     """
     Determine the effective role for a user based on config (dict or path).
@@ -1002,6 +1013,12 @@ class SerialDaemon:
                             await self._send(writer, {"op": "error", "msg": "max_clients must be between 1 and 4"})
                             continue
                         msg["max_clients"] = maxc
+
+                    if "label" in msg:
+                        label_error = validate_label(msg["label"])
+                        if label_error:
+                            await self._send(writer, {"op": "error", "msg": label_error})
+                            continue
 
                     line_cfg = self.config["lines"][line_id_str]
 
