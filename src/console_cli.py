@@ -302,11 +302,20 @@ def _render_product_info_as_table(info_data):
     if not isinstance(info_data, dict) or not info_data:
         return False
 
-    rows = []
+    _key_labels = {
+        "base_port":   "Base Port",
+        "no_of_group": "Max Groups",
+        "no_of_port":  "Max Ports",
+        "no_of_user":  "Max Users",
+    }
+
+    title = "Product Configuration & Limits"
+    click.echo(title)
+    click.echo("-" * len(title))
     for key in sorted(info_data.keys()):
+        label = _key_labels.get(key, key)
         value = info_data.get(key)
-        rows.append([key, value])
-    _print_table(["Key", "Value"], rows)
+        click.echo(f"{label:<16} : {value}")
     return True
 
 

@@ -460,12 +460,12 @@ Use this command to view deployment configuration metadata, such as the base por
 ```bash
 # Show product information in table format
 > console-cli show product-info
-Key             Value
----             -----
-base_port       35000
-no_of_group     16
-no_of_port      24
-no_of_user      16
+Product Configuration & Limits
+------------------------------
+Base Port        : 35000
+Max Groups       : 16
+Max Ports        : 24
+Max Users        : 16
 
 # Show product information as raw JSON
 > console-cli show product-info --json
@@ -480,10 +480,10 @@ no_of_user      16
 ```
 
 ### **Output Field Descriptions**
-- `base_port`: The base port number used for serial connections (typically 35000).
-- `no_of_user`: The maximum number of users that can be configured in this deployment.
-- `no_of_group`: The maximum number of user groups that can be configured in this deployment.
-- `no_of_port`: The maximum number of serial ports available in this deployment.
+- `Base Port`: The base port number used for serial connections (typically 35000).
+- `Max Users`: The maximum number of users that can be configured in this deployment.
+- `Max Groups`: The maximum number of user groups that can be configured in this deployment.
+- `Max Ports`: The maximum number of serial ports available in this deployment.
 
 ---
 
