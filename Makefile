@@ -1,7 +1,9 @@
 # Makefile for Console Server Project
 
+DRIVERS_DIR ?= drivers
+XR17_DRIVER_DIR ?= $(DRIVERS_DIR)/xr17-lnx2.6.32-and-newer-pak_ver2.6
 
-.PHONY: install uninstall start stop test lint clean sync_base_port
+.PHONY: install uninstall start stop test lint clean sync_base_port driver-build driver-install driver-clean
 
 install:
 	@BASE_PORT=$$(python3 -c "import json; print(json.load(open('config/config.json'))['info']['base_port'])"); \
@@ -50,3 +52,12 @@ sync_base_port:
 	# 4. Reminder: Restart services to apply changes
 	@echo "[INFO] Base port updated. Please restart seriald and sshd services to apply changes:"
 	@echo "       sudo systemctl restart seriald.service sshd.service"
+
+driver-build:
+	$(MAKE) -C $(XR17_DRIVER_DIR)
+
+driver-install:
+	sudo $(MAKE) -C $(XR17_DRIVER_DIR) install
+
+driver-clean:
+	$(MAKE) -C $(XR17_DRIVER_DIR) clean
