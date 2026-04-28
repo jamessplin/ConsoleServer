@@ -1,19 +1,24 @@
-#makefile for XR17v35x PCIe UARTs for Linux 2.6.32 and newer
-KERNEL_SRC = /lib/modules/`uname -r`/build
+# Makefile for XR17v35x PCIe UARTs for Linux 2.6.32 and newer
+KVERSION := $(shell uname -r)
+KERNEL_SRC := /lib/modules/$(KVERSION)/build
+INSTALL_DIR := /lib/modules/$(KVERSION)/kernel/drivers/char
+
+.PHONY: all build install clean
 
 all: build
 
 obj-m += xr17v35x.o
 
-xrpci-objs :=	xr17v35x.o
+xrpci-objs := xr17v35x.o
 
-EXTRA_CFLAGS +=  -DDEBUG=1
+EXTRA_CFLAGS += -DDEBUG=1
 
 build:
-	$(MAKE) -C $(KERNEL_SRC) SUBDIRS=$(PWD) modules
+	$(MAKE) -C $(KERNEL_SRC) M=$(CURDIR) modules
 
 install:
-	cp xr17v35x.ko /lib/modules/$(shell uname -r)/kernel/drivers/char
+	install -D -m 0644 xr17v35x.ko $(INSTALL_DIR)/xr17v35x.ko
+	depmod -a $(KVERSION)
+
 clean:
-	rm -f *~ *.o
-	rm -f *~ *.ko
+	$(MAKE) -C $(KERNEL_SRC) M=$(CURDIR) clean

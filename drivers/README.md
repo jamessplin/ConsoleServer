@@ -1,17 +1,17 @@
 # Kernel drivers
 
-Place third-party kernel module source folders here.
+Third-party kernel module sources are vendored here.
 
-Recommended layout:
+Current layout:
 
 - `drivers/xr17-lnx2.6.32-and-newer-pak_ver2.6/`
 
-This keeps kernel-space code separate from user-space app code in `src/`.
+This keeps kernel-space code separate from user-space app code.
 
-Example:
+From this `drivers/` folder:
 
 ```bash
-cp -a ~/workplace/xr17-lnx2.6.32-and-newer-pak_ver2.6 ./drivers/
-make driver-build
-sudo make driver-install
+cd xr17-lnx2.6.32-and-newer-pak_ver2.6
+make build
+sudo make install
 ```
