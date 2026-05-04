@@ -80,7 +80,7 @@ console-cli config operation {port_number} [--mode <mode>] [--max-clients <count
 |---|---|
 | **port_number** | Specifies the serial line number to configure. |
 | **--mode** | Optional. Sets the connection mode (`exclusive`, `shared`). |
-| **--max-clients** | Optional. Sets the maximum number of concurrent clients. |
+| **--max-clients** | Optional. Sets the maximum number of concurrent clients. Supported range: 1 to 4. |
 | **--idle-timeout**| Optional. Sets the idle timeout in seconds. Use 0 to disable. |
 | **--label**| Optional. Sets a user-friendly nickname for the connected device. |
 
@@ -91,6 +91,7 @@ For an existing entry, if a parameter is not specified, its current value is ret
 | Parameter | Default Value |
 |---|---|
 | --mode | shared |
+| --max-clients | 1 |
 | --idle-timeout | 600 |
 | --label | none |
 
