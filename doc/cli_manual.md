@@ -93,7 +93,7 @@ For an existing entry, if a parameter is not specified, its current value is ret
 | --mode | shared |
 | --max-clients | 1 |
 | --idle-timeout | 600 |
-| --label | none |
+| --label | COM<line_number> (for example: COM1, COM2, ...) |
 
 | Feature | Label |
 |---|---|
