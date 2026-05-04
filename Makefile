@@ -3,14 +3,13 @@
 DRIVERS_DIR ?= drivers
 XR17_DRIVER_DIR ?= $(DRIVERS_DIR)/xr17-lnx2.6.32-and-newer-pak_ver2.6
 
-.PHONY: install uninstall start stop test lint clean sync_base_port driver-build driver-install driver-clean
+.PHONY: install upgrade uninstall start stop test lint clean sync_base_port driver-build driver-install driver-clean
 
 install:
-	@BASE_PORT=$$(python3 -c "import json; print(json.load(open('config/config.json'))['info']['base_port'])"); \
-	echo "[INFO] BASE_PORT is $$BASE_PORT"; \
-	sed 's/{{BASE_PORT}}/'"$$BASE_PORT"'/g' src/console-ssh-dispatch.sh.j2 > src/console-ssh-dispatch.sh; \
-	chmod +x src/console-ssh-dispatch.sh; \
 	sudo ./console
+
+upgrade:
+	sudo ./console --upgrade
 
 uninstall:
 	sudo ./console --remove
