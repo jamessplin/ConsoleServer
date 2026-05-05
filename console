@@ -39,6 +39,28 @@ install_file() {
   echo "Installed: $dst"
 }
 
+generate_dispatch_script() {
+  local config="$1"
+  local template="$SRC_ROOT/src/console-ssh-dispatch.sh.j2"
+  local output="$SRC_ROOT/src/console-ssh-dispatch.sh"
+
+  if [[ ! -f "$config" ]]; then
+    echo "ERROR: missing config $config" >&2
+    exit 1
+  fi
+
+  if [[ ! -f "$template" ]]; then
+    echo "ERROR: missing template $template" >&2
+    exit 1
+  fi
+
+  BASE_PORT=$(python3 "$SRC_ROOT/config/get_base_port.py" "$config")
+  echo "[INFO] BASE_PORT is $BASE_PORT"
+  sed "s/{{BASE_PORT}}/$BASE_PORT/g" "$template" > "$output"
+  chmod +x "$output"
+  echo "Generated: $output"
+}
+
 remove_installed() {
   echo "Removing installed files..."
 
@@ -90,46 +112,51 @@ install_dependencies() {
   echo "Dependencies installed successfully."
 }
 
-main() {
-  if [[ $EUID -ne 0 ]]; then
-    echo "Please run as root (sudo)." >&2
-    exit 1
-  fi
-
-  if [[ "${1:-}" == "--remove" ]]; then
-    remove_installed
-    exit 0
-  fi
+do_install() {
+  local keep_config="${1:-false}"
 
   install_dependencies
 
+  # Always regenerate console-ssh-dispatch.sh from template
+  # - Fresh install: use repo config
+  # - Upgrade: use installed config when available
+  if [[ "$keep_config" == "false" ]]; then
+    generate_dispatch_script "$CONFIG_SRC"
+  else
+    if [[ -f "$CONFIG_DST" ]]; then
+      generate_dispatch_script "$CONFIG_DST"
+    else
+      echo "[WARN] Existing config not found at $CONFIG_DST; using repo config $CONFIG_SRC"
+      generate_dispatch_script "$CONFIG_SRC"
+    fi
+  fi
 
   install_file "$CLIENT_SRC" "$CLIENT_DST"
   install_file "$CLI_SRC" "$CLI_DST"
   install_file "$STATUS_SRC" "$STATUS_DST"
   install_file "$DISPATCH_SRC" "$DISPATCH_DST"
   install_file "$SETUP_SSH_DISPATCH_SRC" "$SETUP_SSH_DISPATCH_DST"
-
-  # Install server.py to /usr/local/bin using install_file for consistency
   install_file "$SERVER_SRC" "$SERVER_DST"
 
-  # Install config.json to /etc/seriald
-  install -D -m 0644 "$CONFIG_SRC" "$CONFIG_DST"
-  echo "Installed: $CONFIG_DST"
+  if [[ "$keep_config" == "false" ]]; then
+    # Fresh install: deploy config and set up SSH dispatch
+    install -D -m 0644 "$CONFIG_SRC" "$CONFIG_DST"
+    echo "Installed: $CONFIG_DST"
 
-  # Dynamically determine base port from config
-  BASE_PORT=$(python3 "$(dirname "$CONFIG_SRC")/get_base_port.py" "$CONFIG_SRC")
+    BASE_PORT=$(python3 "$(dirname "$CONFIG_SRC")/get_base_port.py" "$CONFIG_SRC")
 
-  # Set up SSH dispatch and secondary sshd before enabling seriald service
-  echo "Setting up SSH dispatch and secondary sshd..."
-  sudo /usr/local/bin/setup_ssh_dispatch.py -s $((BASE_PORT + 1)) -e $((BASE_PORT + 24)) \
-    --address-family inet \
-    --port22-dualstack \
-    --max-ports-per-sshd 16 \
-    --split-at-port $((BASE_PORT + 12)) \
-    --enable-second-sshd \
-    --second-sshd-config /etc/ssh/sshd_config_seriald2 \
-    --second-sshd-service ssh-seriald2.service
+    echo "Setting up SSH dispatch and secondary sshd..."
+    sudo /usr/local/bin/setup_ssh_dispatch.py -s $((BASE_PORT + 1)) -e $((BASE_PORT + 24)) \
+      --address-family inet \
+      --port22-dualstack \
+      --max-ports-per-sshd 16 \
+      --split-at-port $((BASE_PORT + 12)) \
+      --enable-second-sshd \
+      --second-sshd-config /etc/ssh/sshd_config_seriald2 \
+      --second-sshd-service ssh-seriald2.service
+  else
+    echo "[INFO] Keeping existing config: $CONFIG_DST"
+  fi
 
   echo "Installing and enabling systemd service..."
 
@@ -147,10 +174,34 @@ main() {
   echo "Enabling seriald service to start on boot..."
   systemctl enable seriald.service
 
-  echo "Starting seriald service..."
-  systemctl start seriald.service
+  if [[ "$keep_config" == "false" ]]; then
+    echo "Starting seriald service..."
+    systemctl start seriald.service
+  else
+    echo "Restarting seriald service to apply upgrade..."
+    systemctl restart seriald.service
+  fi
 
   echo "Systemd service setup complete. Use 'systemctl status seriald.service' to check its status."
+}
+
+main() {
+  if [[ $EUID -ne 0 ]]; then
+    echo "Please run as root (sudo)." >&2
+    exit 1
+  fi
+
+  if [[ "${1:-}" == "--remove" ]]; then
+    remove_installed
+    exit 0
+  fi
+
+  if [[ "${1:-}" == "--upgrade" ]]; then
+    do_install true
+    exit 0
+  fi
+
+  do_install false
 }
 
 main "$@"
