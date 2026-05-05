@@ -354,6 +354,16 @@ def _render_lines_section(config_data):
     if not isinstance(lines, dict) or not lines:
         return False
 
+    # Fetch base_port for tcp_port calculation (same source as show_product_info)
+    base_port = 0
+    try:
+        retcode, stdout, _ = _run_status_cmd(['show-product-info'], quiet_on_success=True)
+        if retcode == 0 and stdout:
+            info_data = json.loads(stdout)
+            base_port = int(info_data.get("base_port", 0))
+    except Exception:
+        pass
+
     def _line_sort_key(value):
         text = str(value).strip()
         if text.isdigit():
@@ -362,7 +372,7 @@ def _render_lines_section(config_data):
 
     display_fields = [
         "line",
-        "name",
+        "tcp_port",
         "label",
         "mode",
         "max_clients",
@@ -377,9 +387,13 @@ def _render_lines_section(config_data):
     rows = []
     for line_key in sorted(lines.keys(), key=_line_sort_key):
         line_cfg = lines.get(line_key, {}) or {}
+        try:
+            tcp_port = base_port + int(line_key)
+        except (ValueError, TypeError):
+            tcp_port = None
         rows.append([
             line_key,
-            line_cfg.get("name"),
+            tcp_port,
             line_cfg.get("label"),
             line_cfg.get("mode"),
             line_cfg.get("max_clients"),
