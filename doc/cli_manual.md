@@ -12,7 +12,8 @@
 - [3.1. console-cli show running-config](#31-console-cli-show-running-config)
 - [3.2. console-cli show startup-config](#32-console-cli-show-startup-config)
 - [3.3. console-cli show sessions](#33-console-cli-show-sessions)
-- [3.4. console-cli connect](#34-console-cli-connect)
+- [3.4. console-cli show product-info](#34-console-cli-show-product-info)
+- [3.5. console-cli connect](#35-console-cli-connect)
 
 ---
 
@@ -79,7 +80,7 @@ console-cli config operation {port_number} [--mode <mode>] [--max-clients <count
 |---|---|
 | **port_number** | Specifies the serial line number to configure. |
 | **--mode** | Optional. Sets the connection mode (`exclusive`, `shared`). |
-| **--max-clients** | Optional. Sets the maximum number of concurrent clients. |
+| **--max-clients** | Optional. Sets the maximum number of concurrent clients. Supported range: 1 to 4. |
 | **--idle-timeout**| Optional. Sets the idle timeout in seconds. Use 0 to disable. |
 | **--label**| Optional. Sets a user-friendly nickname for the connected device. |
 
@@ -90,8 +91,14 @@ For an existing entry, if a parameter is not specified, its current value is ret
 | Parameter | Default Value |
 |---|---|
 | --mode | shared |
+| --max-clients | 1 |
 | --idle-timeout | 600 |
-| --label | none |
+| --label | COM<line_number> (for example: COM1, COM2, ...) |
+
+| Feature | Label |
+|---|---|
+| Max Length | 16 characters |
+| Case Sensitivity | Case-sensitive |
 
 ### **Usage Guidelines**
 Use this command to control how users interact with a serial line, such as setting the write-access mode and connection limits. Changes are applied to the running configuration and applied dynamically.
@@ -293,15 +300,16 @@ console-cli config group delete <groupname>
 This command displays the current, active (in-memory) configuration of the `seriald` server.
 
 ```bash
-console-cli show running-config [--line <line_id_or_label>] [--groups] [--users]
+console-cli show running-config [--line <line_id_or_label>] [--groups] [--users] [--json]
 ```
 
 ### **Parameters**
 | Parameter | Description |
 |---|---|
-| **--line** | Optional. Displays the configuration for a specific serial line, identified by its number (e.g., `5`) or its label (e.g., `"Backup Console"`). |
+| **--line** | Optional. Displays the configuration for a specific serial line, identified by its number (e.g., `5`) or its label (e.g., `"Backup Console"`). Use `all` to display all lines only. |
 | **--groups** | Optional. Displays only the `groups` section of the configuration. |
 | **--users** | Optional. Displays only the `users` section of the configuration. |
+| **--json** | Optional. Outputs raw JSON. If omitted, CLI-friendly output is used. |
 
 ### **Usage Guidelines**
 Use this command to view the live configuration. By default, it displays the entire configuration. Use the options to filter for specific sections.
@@ -316,6 +324,12 @@ Use this command to view the live configuration. By default, it displays the ent
 
 # Show the configuration for the line labeled "Backup Console"
 > console-cli show running-config --line "Backup Console"
+
+# Show all line entries only
+> console-cli show running-config --line all
+
+# Show all line entries as raw JSON
+> console-cli show running-config --line all --json
 
 # Show only the groups configuration
 > console-cli show running-config --groups
@@ -332,15 +346,16 @@ Use this command to view the live configuration. By default, it displays the ent
 This command displays the saved configuration from `config.json` that will be loaded when the `seriald` server starts.
 
 ```bash
-console-cli show startup-config [--line <line_id_or_label>] [--groups] [--users]
+console-cli show startup-config [--line <line_id_or_label>] [--groups] [--users] [--json]
 ```
 
 ### **Parameters**
 | Parameter | Description |
 |---|---|
-| **--line** | Optional. Displays the configuration for a specific serial line, identified by its number (e.g., `5`) or its label (e.g., `"Backup Console"`). |
+| **--line** | Optional. Displays the configuration for a specific serial line, identified by its number (e.g., `5`) or its label (e.g., `"Backup Console"`). Use `all` to display all lines only. |
 | **--groups** | Optional. Displays only the `groups` section of the configuration. |
 | **--users** | Optional. Displays only the `users` section of the configuration. |
+| **--json** | Optional. Outputs raw JSON. If omitted, CLI-friendly output is used. |
 
 ### **Usage Guidelines**
 Use this command to verify the configuration that will be applied after a reboot or service restart. By default, it displays the entire configuration.
@@ -352,6 +367,12 @@ Use this command to verify the configuration that will be applied after a reboot
 
 # Show the startup configuration for line 5
 > console-cli show startup-config --line 5
+
+# Show all startup line entries only
+> console-cli show startup-config --line all
+
+# Show startup line entries as raw JSON
+> console-cli show startup-config --line all --json
 
 # Show only the groups section of the startup configuration
 > console-cli show startup-config --groups
@@ -365,13 +386,14 @@ Use this command to verify the configuration that will be applied after a reboot
 This command displays active client sessions connected to the `seriald` server.
 
 ```bash
-console-cli show sessions [--line <line_id>]
+console-cli show sessions [--line <line_id>] [--json]
 ```
 
 ### **Parameters**
 | Parameter | Description |
 |---|---|
 | **--line** | Optional. Filters the output to show session details only for a specific serial line number. |
+| **--json** | Optional. Outputs raw JSON. If omitted, CLI-friendly output is used. |
 
 ### **Usage Guidelines**
 Use this command to get a real-time view of all connected clients. It provides details on which user is connected to which line, their role (writer or observer), and their connection information. This is useful for monitoring server activity and troubleshooting connection issues.
@@ -380,6 +402,9 @@ Use this command to get a real-time view of all connected clients. It provides d
 ```bash
 # Show all active sessions across all lines
 > console-cli show sessions
+
+# Show all active sessions as raw JSON
+> console-cli show sessions --json
 
 Daemon Sessions:
 - line 1 [exclusive] : writer=ted (clients=3, writers=1, observers=2)
@@ -414,7 +439,56 @@ Daemon Sessions:
 - `[timeout=Ns, left=Ns]`: If an idle timeout is configured for the line, this shows the total timeout duration and the remaining time before the client is disconnected due to inactivity.
 
 ---
-### 3.4. console-cli connect
+
+### 3.4. console-cli show product-info
+**Required Privilege:** operator or higher (console-server, admin)
+
+This command displays product information, including deployment-specific settings such as the base port and resource limits.
+
+```bash
+console-cli show product-info [--json]
+```
+
+### **Parameters**
+| Parameter | Description |
+|---|---|
+| **--json** | Optional. Outputs raw JSON. If omitted, CLI-friendly table format is used. |
+
+### **Usage Guidelines**
+Use this command to view deployment configuration metadata, such as the base port number and the configured limits for users, groups, and serial ports. This information is read from the `config.json` file and represents the hardware and software constraints for the current deployment.
+
+### **Example**
+```bash
+# Show product information in table format
+> console-cli show product-info
+Product Configuration & Limits
+------------------------------
+Base Port        : 35000
+Max Groups       : 16
+Max Ports        : 24
+Max Users        : 16
+
+# Show product information as raw JSON
+> console-cli show product-info --json
+{
+  "info": {
+    "base_port": 35000,
+    "no_of_user": 16,
+    "no_of_group": 16,
+    "no_of_port": 24
+  }
+}
+```
+
+### **Output Field Descriptions**
+- `Base Port`: The base port number used for serial connections (typically 35000).
+- `Max Users`: The maximum number of users that can be configured in this deployment.
+- `Max Groups`: The maximum number of user groups that can be configured in this deployment.
+- `Max Ports`: The maximum number of serial ports available in this deployment.
+
+---
+
+### 3.5. console-cli connect
 **Required Privilege:** operator or higher (console-server, admin)
 
 This command connects the user's terminal to a specific serial line, allowing direct interaction with the connected device.

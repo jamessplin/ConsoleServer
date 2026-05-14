@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
 import asyncio
+import logging
 import base64
 import json
 import os
 import sys
+# Logging setup: similar to server.py
+logging.basicConfig(
+    level=logging.ERROR,  # Change to logging.DEBUG for more output
+    format='[%(asctime)s] [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 import getpass
 import tty
 import termios
@@ -46,6 +56,8 @@ def restore_terminal(old_attrs):
 
 async def bridge(host: str, port: int, line: int, want_writer: bool):
     """Main function to bridge stdin/stdout to the seriald control and data planes."""
+    # Log session start
+    logging.info(f"Client session starting: host={host}, port={port}, line={line}, want_writer={want_writer}")
     # Event to signal successful attachment
     attach_event = asyncio.Event()
     # Event to signal that the connection is finished
@@ -85,6 +97,7 @@ async def bridge(host: str, port: int, line: int, want_writer: bool):
     }
     ctl_writer.write(json.dumps(attach_msg).encode() + b"\n")
     await ctl_writer.drain()
+    logging.info(f"Sent attach request to seriald: {attach_msg}")
     write_stdout(b"\r\n[Connecting to seriald...]\r\n")
 
     original_termios = None
@@ -115,6 +128,7 @@ async def bridge(host: str, port: int, line: int, want_writer: bool):
         ser2net_host = role_holder["ser2net_host"]
         ser2net_port = role_holder["ser2net_port"]
 
+        logging.info(f"Session established: line={line}, role={role}, mode={mode}, fakeserial={is_fakeserial}, ser2net_host={ser2net_host}, ser2net_port={ser2net_port}")
         write_stdout(f"[Attached to line {line} as {role} in {mode} mode]\r\n".encode())
         write_stdout(b"Tip: Press ~. to detach.\r\n")
 

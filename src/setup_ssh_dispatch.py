@@ -8,17 +8,24 @@ from pathlib import Path
 from typing import Optional
 from passlib.hash import sha512_crypt
 
+# Global flag to control printing
+quiet_mode = False
+
+def qprint(*args, **kwargs):
+    """Quiet print - only prints if not in quiet mode."""
+    if not quiet_mode:
+        print(*args, **kwargs)
 
 def run(cmd, dry_run=False):
     if dry_run:
-        print("DRY-RUN:", " ".join(cmd))
+        qprint("DRY-RUN:", " ".join(cmd))
         return 0
     return subprocess.check_call(cmd)
 
 
 def ensure_root():
     if os.geteuid() != 0:
-        print("This command must be run as root. Try with sudo.", file=sys.stderr)
+        qprint("This command must be run as root. Try with sudo.", file=sys.stderr)
         sys.exit(1)
 
 
@@ -36,9 +43,9 @@ def read_users_file(path):
 def ensure_group(group, dry_run=False):
     try:
         subprocess.check_call(["getent", "group", group], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print(f"Group '{group}' exists.")
+        qprint(f"Group '{group}' exists.")
     except subprocess.CalledProcessError:
-        print(f"Creating group '{group}'...")
+        qprint(f"Creating group '{group}'...")
         run(["groupadd", "-f", group], dry_run=dry_run)
 
 
@@ -46,33 +53,33 @@ def ensure_user(user, shell, create, password=None, dry_run=False):
     exists = (subprocess.call(["id", "-u", user], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0)
     if exists:
         if password:
-            print(f"Updating password for existing user '{user}'...")
+            qprint(f"Updating password for existing user '{user}'...")
             # Use chpasswd for password update
             if dry_run:
-                print(f"DRY-RUN: echo '{user}:<hidden>' | chpasswd")
+                qprint(f"DRY-RUN: echo '{user}:<hidden>' | chpasswd")
             else:
                 try:
                     # Use subprocess to echo password and pipe to chpasswd
                     subprocess.run(["chpasswd"], input=f"{user}:{password}\n", text=True, check=True)
                 except Exception as e:
-                    print(f"Error updating password for user '{user}': {e}", file=sys.stderr)
+                    qprint(f"Error updating password for user '{user}': {e}", file=sys.stderr)
         return True
     if not create:
-        print(f"User '{user}' does not exist. Use --create-users to create.", file=sys.stderr)
+        qprint(f"User '{user}' does not exist. Use --create-users to create.", file=sys.stderr)
         return False
-    print(f"Creating user '{user}' with shell '{shell}'...")
+    qprint(f"Creating user '{user}' with shell '{shell}'...")
     cmd = ["useradd", "-m", "-s", shell]
     if password:
         cmd.extend(["-p", sha512_crypt.hash(password)])
     cmd.append(user)
     run(cmd, dry_run=dry_run)
     if not password:
-        print(f"Warning: user '{user}' created without a password and is locked.", file=sys.stderr)
+        qprint(f"Warning: user '{user}' created without a password and is locked.", file=sys.stderr)
     return True
 
 
 def add_user_to_group(user, group, dry_run=False):
-    print(f"Adding '{user}' to group '{group}'...")
+    qprint(f"Adding '{user}' to group '{group}'...")
     run(["usermod", "-aG", group, user], dry_run=dry_run)
 
 
@@ -80,15 +87,15 @@ def install_dispatch_wrapper(repo_dir, dry_run=False):
     src = Path(repo_dir) / "console-ssh-dispatch.sh"
     dst = Path("/usr/local/bin/console-ssh-dispatch")
     if not src.is_file():
-        print(f"Dispatch wrapper not found at {src}", file=sys.stderr)
+        qprint(f"Dispatch wrapper not found at {src}", file=sys.stderr)
         sys.exit(2)
     if dry_run:
-        print(f"DRY-RUN: install -m 0755 {src} {dst}")
+        qprint(f"DRY-RUN: install -m 0755 {src} {dst}")
     else:
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
         os.chmod(dst, 0o755)
-        print(f"Installed {dst}")
+        qprint(f"Installed {dst}")
 
 
 def build_config(
@@ -111,7 +118,8 @@ def build_config(
         lines.append(f"AddressFamily {address_family}")
     if include_ports:
         if include_port22 and include_port22_port:
-            lines.append("Port 22")
+            lines.append("ListenAddress 0.0.0.0:22")
+            lines.append("ListenAddress [::]:22")
         for p in ports:
             if serial_ports_ipv4_only:
                 lines.append(f"ListenAddress 0.0.0.0:{p}")
@@ -157,27 +165,27 @@ def build_config(
 
 def write_dropin(config_text, dropin_path, print_only=False, dry_run=False):
     if print_only:
-        print(config_text)
+        qprint(config_text)
         return
     dropin = Path(dropin_path)
     if dry_run:
-        print(f"DRY-RUN: write {dropin} with below content:\n{config_text}")
+        qprint(f"DRY-RUN: write {dropin} with below content:\n{config_text}")
         return
     dropin.parent.mkdir(parents=True, exist_ok=True)
     dropin.write_text(config_text, encoding="utf-8")
-    print(f"Wrote {dropin}")
+    qprint(f"Wrote {dropin}")
 
 
 def reload_sshd(dry_run=False):
     try:
         run(["systemctl", "reload", "sshd"], dry_run=dry_run)
-        print("Reloaded sshd")
+        qprint("Reloaded sshd")
     except subprocess.CalledProcessError as e:
-        print(f"Warning: failed to reload sshd: {e}", file=sys.stderr)
+        qprint(f"Warning: failed to reload sshd: {e}", file=sys.stderr)
 
 
 def remove_user_from_group(user, group, dry_run=False):
-    print(f"Removing '{user}' from group '{group}'...")
+    qprint(f"Removing '{user}' from group '{group}'...")
     run(["gpasswd", "-d", user, group], dry_run=dry_run)
 
 
@@ -188,40 +196,40 @@ def delete_user(user, remove_home=False, force=False, dry_run=False):
     if remove_home:
         cmd.append("-r")
     cmd.append(user)
-    print(f"Deleting user '{user}' (remove_home={remove_home}, force={force})...")
+    qprint(f"Deleting user '{user}' (remove_home={remove_home}, force={force})...")
     run(cmd, dry_run=dry_run)
 
 
 def terminate_user_sessions(user, dry_run=False):
     # Terminate user sessions via systemd (if available)
-    print(f"Terminating systemd sessions for user '{user}'...")
+    qprint(f"Terminating systemd sessions for user '{user}'...")
     try:
         run(["loginctl", "terminate-user", user], dry_run=dry_run)
     except subprocess.CalledProcessError as e:
-        print(f"Warning: loginctl failed for {user}: {e}", file=sys.stderr)
+        qprint(f"Warning: loginctl failed for {user}: {e}", file=sys.stderr)
 
 
 def kill_user_processes(user, dry_run=False):
     # Send TERM to all user processes
-    print(f"Killing processes for user '{user}' (SIGTERM)...")
+    qprint(f"Killing processes for user '{user}' (SIGTERM)...")
     try:
         run(["pkill", "-u", user], dry_run=dry_run)
     except subprocess.CalledProcessError as e:
-        print(f"Info: pkill returned non-zero (may be no processes): {e}")
+        qprint(f"Info: pkill returned non-zero (may be no processes): {e}")
 
 
 def write_file(path: str, content: str, dry_run: bool = False):
     p = Path(path)
     if dry_run:
-        print(f"DRY-RUN: write {path} with below content:\n{content}")
+        qprint(f"DRY-RUN: write {path} with below content:\n{content}")
         return
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding="utf-8")
-    print(f"Wrote {path}")
+    qprint(f"Wrote {path}")
 
 
 def create_secondary_sshd(start_port: int, end_port: int, address_family: str, config_path: str, service_name: str, group: str, dry_run: bool = False):
-    print(f"Creating secondary sshd instance for ports {start_port}..{end_port}")
+    qprint(f"Creating secondary sshd instance for ports {start_port}..{end_port}")
     cfg = build_config(start_port, end_port, group=group, include_ports=True, address_family=address_family, include_port22=False)
     write_file(config_path, cfg, dry_run=dry_run)
     unit_path = f"/etc/systemd/system/{service_name}"
@@ -241,14 +249,14 @@ WantedBy=multi-user.target
 """.strip().format(config_path=config_path)
     write_file(unit_path, unit_content, dry_run=dry_run)
     if dry_run:
-        print(f"DRY-RUN: systemctl daemon-reload && systemctl enable --now {service_name}")
+        qprint(f"DRY-RUN: systemctl daemon-reload && systemctl enable --now {service_name}")
     else:
         try:
             run(["systemctl", "daemon-reload"], dry_run=False)
             run(["systemctl", "enable", "--now", service_name], dry_run=False)
-            print(f"Enabled and started {service_name}")
+            qprint(f"Enabled and started {service_name}")
         except subprocess.CalledProcessError as e:
-            print(f"Warning: failed to enable/start {service_name}: {e}", file=sys.stderr)
+            qprint(f"Warning: failed to enable/start {service_name}: {e}", file=sys.stderr)
 
 
 def ensure_firewall_redirect_iptables(start_port: int, end_port: int, to_port: int, include_output: bool, persist: bool, dry_run: bool = False) -> None:
@@ -261,7 +269,7 @@ def ensure_firewall_redirect_iptables(start_port: int, end_port: int, to_port: i
     """
     import shutil as _sh
     if _sh.which("iptables") is None:
-        print("iptables not found; skipping firewall redirect.", file=sys.stderr)
+        qprint("iptables not found; skipping firewall redirect.", file=sys.stderr)
         return
 
     range_spec = f"{start_port}:{end_port}"
@@ -278,35 +286,35 @@ def ensure_firewall_redirect_iptables(start_port: int, end_port: int, to_port: i
     for chain, check_cmd, add_cmd in rules:
         try:
             if dry_run:
-                print("DRY-RUN:", "iptables", *check_cmd)
-                print("DRY-RUN:", "iptables", *add_cmd)
+                qprint("DRY-RUN:", "iptables", *check_cmd)
+                qprint("DRY-RUN:", "iptables", *add_cmd)
                 continue
             subprocess.check_call(["iptables", *check_cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            print(f"Firewall redirect rule already present ({chain}).")
+            qprint(f"Firewall redirect rule already present ({chain}).")
         except subprocess.CalledProcessError:
-            print(f"Adding firewall redirect rule ({chain}) {range_spec} -> {to_port}...")
+            qprint(f"Adding firewall redirect rule ({chain}) {range_spec} -> {to_port}...")
             subprocess.check_call(["iptables", *add_cmd])
 
     if persist:
         if dry_run:
-            print("DRY-RUN: persist firewall rules via netfilter-persistent or iptables-save")
+            qprint("DRY-RUN: persist firewall rules via netfilter-persistent or iptables-save")
             return
         # Prefer netfilter-persistent, else write /etc/iptables/rules.v4 from iptables-save
         if _sh.which("netfilter-persistent") is not None:
             try:
                 subprocess.check_call(["netfilter-persistent", "save"])
-                print("Persisted firewall rules with netfilter-persistent.")
+                qprint("Persisted firewall rules with netfilter-persistent.")
                 return
             except subprocess.CalledProcessError as e:
-                print(f"Warning: netfilter-persistent save failed: {e}", file=sys.stderr)
+                qprint(f"Warning: netfilter-persistent save failed: {e}", file=sys.stderr)
         try:
             out = subprocess.check_output(["iptables-save"], text=True)
             rules_dir = Path("/etc/iptables")
             rules_dir.mkdir(parents=True, exist_ok=True)
             (rules_dir / "rules.v4").write_text(out, encoding="utf-8")
-            print("Persisted firewall rules to /etc/iptables/rules.v4.")
+            qprint("Persisted firewall rules to /etc/iptables/rules.v4.")
         except Exception as e:
-            print(f"Warning: failed to persist iptables rules: {e}", file=sys.stderr)
+            qprint(f"Warning: failed to persist iptables rules: {e}", file=sys.stderr)
 
 def ensure_include(file_path: str, include_line: str, dry_run: bool = False) -> None:
     """Ensure an Include directive exists and is uncommented in a config file.
@@ -317,12 +325,12 @@ def ensure_include(file_path: str, include_line: str, dry_run: bool = False) -> 
     """
     path = Path(file_path)
     if not path.exists():
-        print(f"Info: {file_path} not found; skipping include check.")
+        qprint(f"Info: {file_path} not found; skipping include check.")
         return
     try:
         content = path.read_text(encoding="utf-8").splitlines(keepends=True)
     except Exception as e:
-        print(f"Warning: failed to read {file_path}: {e}", file=sys.stderr)
+        qprint(f"Warning: failed to read {file_path}: {e}", file=sys.stderr)
         return
 
     active_idx: Optional[int] = None
@@ -339,24 +347,24 @@ def ensure_include(file_path: str, include_line: str, dry_run: bool = False) -> 
                 # continue scan in case an active one exists later
 
     if active_idx is not None:
-        print(f"Include already active in {file_path}: {include_line}")
+        qprint(f"Include already active in {file_path}: {include_line}")
         return
 
     if commented_idx is not None:
-        print(f"Uncommenting Include in {file_path}: {include_line}")
+        qprint(f"Uncommenting Include in {file_path}: {include_line}")
         content[commented_idx] = include_line + ("\n" if not content[commented_idx].endswith("\n") else "")
     else:
-        print(f"Adding Include to {file_path}: {include_line}")
+        qprint(f"Adding Include to {file_path}: {include_line}")
         content.insert(0, include_line + "\n")
 
     if dry_run:
-        print(f"DRY-RUN: write {file_path} with updated Include")
+        qprint(f"DRY-RUN: write {file_path} with updated Include")
         return
     try:
         Path(file_path).write_text("".join(content), encoding="utf-8")
-        print(f"Updated {file_path}")
+        qprint(f"Updated {file_path}")
     except Exception as e:
-        print(f"Error writing {file_path}: {e}", file=sys.stderr)
+        qprint(f"Error writing {file_path}: {e}", file=sys.stderr)
 
 
 def comment_out_include(file_path: str, include_line: str, dry_run: bool = False) -> None:
@@ -366,31 +374,31 @@ def comment_out_include(file_path: str, include_line: str, dry_run: bool = False
     """
     path = Path(file_path)
     if not path.exists():
-        print(f"Info: {file_path} not found; skipping client include comment.")
+        qprint(f"Info: {file_path} not found; skipping client include comment.")
         return
     try:
         content = path.read_text(encoding="utf-8").splitlines(keepends=True)
     except Exception as e:
-        print(f"Warning: failed to read {file_path}: {e}", file=sys.stderr)
+        qprint(f"Warning: failed to read {file_path}: {e}", file=sys.stderr)
         return
     changed = False
     for i, line in enumerate(content):
         if line.strip() == include_line:
             content[i] = "# " + include_line + ("\n" if not content[i].endswith("\n") else "")
             changed = True
-            print(f"Commented out Include in {file_path}: {include_line}")
+            qprint(f"Commented out Include in {file_path}: {include_line}")
             break
     if not changed:
-        print(f"No active Include to comment in {file_path}.")
+        qprint(f"No active Include to comment in {file_path}.")
         return
     if dry_run:
-        print(f"DRY-RUN: write {file_path} with commented Include")
+        qprint(f"DRY-RUN: write {file_path} with commented Include")
         return
     try:
         path.write_text("".join(content), encoding="utf-8")
-        print(f"Updated {file_path}")
+        qprint(f"Updated {file_path}")
     except Exception as e:
-        print(f"Error writing {file_path}: {e}", file=sys.stderr)
+        qprint(f"Error writing {file_path}: {e}", file=sys.stderr)
 
 
 def parse_args():
@@ -413,17 +421,20 @@ def parse_args():
     parser.add_argument("--delete-users", nargs="*", default=[], help="Delete specified user accounts")
     parser.add_argument("--remove-home", action="store_true", help="When deleting users, remove home directories (-r)")
     parser.add_argument("--dry-run", action="store_true", help="Show actions without executing")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress informational output")
     return parser.parse_args()
 
 
 def main():
 
     args = parse_args()
+    global quiet_mode
+    quiet_mode = args.quiet
     ensure_root()
 
     # REMOVE-ALL logic: full uninstall
     if getattr(args, "remove_all", False):
-        print("[remove-all] Removing all seriald-related users, groups, SSH configs, services, and files from system folders...")
+        qprint("[remove-all] Removing all seriald-related users, groups, SSH configs, services, and files from system folders...")
         dry_run = getattr(args, "dry_run", False)
         # 1. Remove users in the console group (system users only)
         group = getattr(args, "group", "console")
@@ -432,115 +443,115 @@ def main():
             group_info = grp.getgrnam(group)
             users_in_group = group_info.gr_mem
         except Exception as e:
-            print(f"[remove-all] Warning: could not get users in group '{group}': {e}")
+            qprint(f"[remove-all] Warning: could not get users in group '{group}': {e}")
             users_in_group = []
         for u in users_in_group:
             try:
-                print(f"[remove-all] Deleting user '{u}'...")
+                qprint(f"[remove-all] Deleting user '{u}'...")
                 terminate_user_sessions(u, dry_run=dry_run)
                 kill_user_processes(u, dry_run=dry_run)
                 delete_user(u, remove_home=True, force=True, dry_run=dry_run)
             except Exception as e:
-                print(f"[remove-all] Warning: failed to delete user '{u}': {e}")
+                qprint(f"[remove-all] Warning: failed to delete user '{u}': {e}")
         # 2. Remove group
         try:
-            print(f"[remove-all] Deleting group '{group}'...")
+            qprint(f"[remove-all] Deleting group '{group}'...")
             if not dry_run:
                 subprocess.call(["groupdel", group])
             else:
-                print(f"DRY-RUN: groupdel {group}")
+                qprint(f"DRY-RUN: groupdel {group}")
         except Exception as e:
-            print(f"[remove-all] Warning: failed to delete group '{group}': {e}")
+            qprint(f"[remove-all] Warning: failed to delete group '{group}': {e}")
         # 3. Remove SSH drop-in config (system folder only)
         dropin = "/etc/ssh/sshd_config.d/console-seriald.conf"
         if Path(dropin).exists():
-            print(f"[remove-all] Removing drop-in config {dropin}")
+            qprint(f"[remove-all] Removing drop-in config {dropin}")
             if not dry_run:
                 try:
                     Path(dropin).unlink()
                 except Exception as e:
-                    print(f"[remove-all] Warning: failed to remove {dropin}: {e}")
+                    qprint(f"[remove-all] Warning: failed to remove {dropin}: {e}")
             else:
-                print(f"DRY-RUN: rm {dropin}")
+                qprint(f"DRY-RUN: rm {dropin}")
         # 4. Remove secondary sshd config and service (system folders only)
         second_cfg = "/etc/ssh/sshd_config_seriald2"
         second_srv = "ssh-seriald2.service"
         if Path(second_cfg).exists():
-            print(f"[remove-all] Removing secondary sshd config {second_cfg}")
+            qprint(f"[remove-all] Removing secondary sshd config {second_cfg}")
             if not dry_run:
                 try:
                     Path(second_cfg).unlink()
                 except Exception as e:
-                    print(f"[remove-all] Warning: failed to remove {second_cfg}: {e}")
+                    qprint(f"[remove-all] Warning: failed to remove {second_cfg}: {e}")
             else:
-                print(f"DRY-RUN: rm {second_cfg}")
+                qprint(f"DRY-RUN: rm {second_cfg}")
         unit_path = f"/etc/systemd/system/{second_srv}"
         if Path(unit_path).exists():
-            print(f"[remove-all] Stopping and disabling secondary sshd service {second_srv}")
+            qprint(f"[remove-all] Stopping and disabling secondary sshd service {second_srv}")
             if not dry_run:
                 try:
                     subprocess.call(["systemctl", "stop", second_srv])
                     subprocess.call(["systemctl", "disable", second_srv])
                 except Exception as e:
-                    print(f"[remove-all] Warning: failed to stop/disable {second_srv}: {e}")
+                    qprint(f"[remove-all] Warning: failed to stop/disable {second_srv}: {e}")
             else:
-                print(f"DRY-RUN: systemctl stop {second_srv}")
-                print(f"DRY-RUN: systemctl disable {second_srv}")
-            print(f"[remove-all] Removing secondary sshd service {unit_path}")
+                qprint(f"DRY-RUN: systemctl stop {second_srv}")
+                qprint(f"DRY-RUN: systemctl disable {second_srv}")
+            qprint(f"[remove-all] Removing secondary sshd service {unit_path}")
             if not dry_run:
                 try:
                     Path(unit_path).unlink()
                 except Exception as e:
-                    print(f"[remove-all] Warning: failed to remove {unit_path}: {e}")
+                    qprint(f"[remove-all] Warning: failed to remove {unit_path}: {e}")
             else:
-                print(f"DRY-RUN: rm {unit_path}")
+                qprint(f"DRY-RUN: rm {unit_path}")
         # 5. Remove dispatch wrapper (system folder only)
         wrapper = "/usr/local/bin/console-ssh-dispatch"
         if Path(wrapper).exists():
-            print(f"[remove-all] Removing dispatch wrapper {wrapper}")
+            qprint(f"[remove-all] Removing dispatch wrapper {wrapper}")
             if not dry_run:
                 try:
                     Path(wrapper).unlink()
                 except Exception as e:
-                    print(f"[remove-all] Warning: failed to remove {wrapper}: {e}")
+                    qprint(f"[remove-all] Warning: failed to remove {wrapper}: {e}")
             else:
-                print(f"DRY-RUN: rm {wrapper}")
+                qprint(f"DRY-RUN: rm {wrapper}")
         # 6. Remove seriald systemd service (system folder only)
         seriald_service = "/etc/systemd/system/seriald.service"
         if Path(seriald_service).exists():
-            print(f"[remove-all] Removing seriald service {seriald_service}")
+            qprint(f"[remove-all] Removing seriald service {seriald_service}")
             if not dry_run:
                 try:
                     Path(seriald_service).unlink()
                 except Exception as e:
-                    print(f"[remove-all] Warning: failed to remove {seriald_service}: {e}")
+                    qprint(f"[remove-all] Warning: failed to remove {seriald_service}: {e}")
             else:
-                print(f"DRY-RUN: rm {seriald_service}")
+                qprint(f"DRY-RUN: rm {seriald_service}")
         # 7. Reload systemd and sshd
-        print("[remove-all] Reloading systemd and sshd...")
+        qprint("[remove-all] Reloading systemd and sshd...")
         if not dry_run:
             try:
                 subprocess.call(["systemctl", "daemon-reload"])
                 subprocess.call(["systemctl", "reload", "sshd"])
             except Exception as e:
-                print(f"[remove-all] Warning: failed to reload systemd/sshd: {e}")
+                qprint(f"[remove-all] Warning: failed to reload systemd/sshd: {e}")
         else:
-            print("DRY-RUN: systemctl daemon-reload && systemctl reload sshd")
-        print("[remove-all] Complete.")
+            qprint("DRY-RUN: systemctl daemon-reload && systemctl reload sshd")
+        qprint("[remove-all] Complete.")
         return
 
     # Validate ports
     if args.start > args.end:
-        print(f"Invalid port range: {args.start}..{args.end}", file=sys.stderr)
+        qprint(f"Invalid port range: {args.start}..{args.end}", file=sys.stderr)
         sys.exit(2)
     if args.max_ports_per_sshd < 1:
-        print("Invalid --max-ports-per-sshd: must be >= 1", file=sys.stderr)
+        qprint("Invalid --max-ports-per-sshd: must be >= 1", file=sys.stderr)
         sys.exit(2)
     if args.port22_dualstack and args.address_family != "inet":
-        print("--port22-dualstack requires --address-family inet", file=sys.stderr)
+        qprint("--port22-dualstack requires --address-family inet", file=sys.stderr)
         sys.exit(2)
     if args.split_at_port is not None and not (args.start <= args.split_at_port < args.end):
-        print("Invalid --split-at-port: must satisfy start <= split_at_port < end", file=sys.stderr)
+        qprint("Invalid --split-at-port: must satisfy start <= split_at_port < end", file=sys.stderr)
         sys.exit(2)
 
     # Compute repo dir (for locating wrapper)
@@ -551,7 +562,7 @@ def main():
         # Ensure the 'console' group exists before adding users
         ensure_group("console", dry_run=args.dry_run)
         for u in args.users:
-            print(f"Creating user '{u}'...")
+            qprint(f"Creating user '{u}'...")
             ensure_user(u, shell="/bin/bash", create=True, password=args.password, dry_run=args.dry_run)
             add_user_to_group(u, "console", dry_run=args.dry_run)
         return
@@ -559,13 +570,13 @@ def main():
     # User deletion
     if args.delete_users:
         for u in args.delete_users:
-            print(f"Deleting user '{u}'...")
+            qprint(f"Deleting user '{u}'...")
             delete_user(u, remove_home=args.remove_home, force=True, dry_run=args.dry_run)
         return
 
     # Full setup (default action)
     if args.start and args.end:
-        print(f"Setting up SSH dispatch for ports {args.start} to {args.end}...")
+        qprint(f"Setting up SSH dispatch for ports {args.start} to {args.end}...")
         group = "console"
         dropin_path = "/etc/ssh/sshd_config.d/console-seriald.conf"
         primary_address_family = args.address_family
@@ -576,7 +587,6 @@ def main():
         if args.port22_dualstack:
             # Keep port 22 behavior from /etc/ssh/sshd_config and only add IPv4 serial listeners in the drop-in.
             primary_address_family = "any"
-            primary_include_port22_port = False
             primary_serial_ports_ipv4_only = True
         # Install dispatch wrapper
         install_dispatch_wrapper(repo_dir, dry_run=args.dry_run)
@@ -593,7 +603,7 @@ def main():
                 if args.port22_dualstack:
                     primary_capacity = max(0, primary_capacity - 2)
                 if primary_capacity <= 0:
-                    print(
+                    qprint(
                         "Primary sshd has no capacity left for serial ports with current settings. "
                         "Increase --max-ports-per-sshd or disable --port22-dualstack.",
                         file=sys.stderr,
@@ -602,7 +612,7 @@ def main():
                 primary_count = min(total, primary_capacity)
                 secondary_count = total - primary_count
                 if secondary_count > args.max_ports_per_sshd:
-                    print(
+                    qprint(
                         "Port range exceeds capacity of two sshd instances. "
                         "Reduce ports, increase --max-ports-per-sshd, or define --split-at-port.",
                         file=sys.stderr,
@@ -635,7 +645,7 @@ def main():
                     dry_run=args.dry_run,
                 )
             else:
-                print("No secondary range required after split.")
+                qprint("No secondary range required after split.")
         else:
             # Write main sshd drop-in config for full range
             config_text = build_config(

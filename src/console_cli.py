@@ -4,6 +4,7 @@ import os
 import pwd
 import sys
 import time
+import json
 import threading
 import queue
 import subprocess
@@ -245,69 +246,229 @@ def write_stdout(data: bytes):
 # Click CLI Implementation
 # =========================
 
-def _run_status_cmd(cmd_args):
+DEBUG_STATE_FILE = "/tmp/console-cli.debug"
+
+def _run_status_cmd(cmd_args, quiet_on_success=False):
     """Helper to run commands using the status.py utility."""
-    # Let's try to find status.py in a few common locations
     base_path = os.path.dirname(os.path.abspath(__file__))
-    possible_paths = [
-        os.path.join(base_path, "status.py"),
-        "/usr/local/bin/seriald-status",
-    ]
+    status_script = "/usr/local/bin/seriald-status"
 
-    status_script = None
-    for p in possible_paths:
-        if os.path.exists(p):
-            status_script = p
-            break
-
-    if not status_script:
-        click.echo("Error: status.py utility not found.", err=True)
-        return False
-
-    # Ensure the script is executable
-    if not os.access(status_script, os.X_OK):
-        os.chmod(status_script, 0o755)
+    if not os.path.exists(status_script):
+        click.echo(f"Error: {status_script} utility not found.", err=True)
+        return 1, "", f"{status_script} not found"
 
     cmd = [sys.executable, status_script] + cmd_args
+
+    is_debug = os.path.exists(DEBUG_STATE_FILE) or '--debug' in sys.argv
+    if quiet_on_success and not is_debug:
+        cmd.append("--quiet")
+
+    if is_debug:
+        click.echo(f"[DEBUG] Running status command: {' '.join(cmd)}", err=True)
+
     try:
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         stdout, stderr = process.communicate()
-
-        if stdout:
-            click.echo(stdout, nl=False)
-        if stderr:
-            click.echo(f"Error: {stderr}", err=True, nl=False)
-
-        return process.returncode == 0
+        return process.returncode, stdout, stderr
     except Exception as e:
-        click.echo(f"An unexpected error occurred while running status command: {e}", err=True)
+        return 1, "", str(e)
+
+
+def _normalize_cell(value):
+    if value is None:
+        return "-"
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value) if value else "-"
+    return str(value)
+
+
+def _print_table(headers, rows):
+    normalized_rows = [[_normalize_cell(cell) for cell in row] for row in rows]
+    widths = [len(str(h)) for h in headers]
+    for row in normalized_rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(cell))
+
+    header_line = "  ".join(str(h).ljust(widths[i]) for i, h in enumerate(headers))
+    sep_line = "  ".join("-" * widths[i] for i in range(len(headers)))
+    click.echo(header_line)
+    click.echo(sep_line)
+    for row in normalized_rows:
+        click.echo("  ".join(row[i].ljust(widths[i]) for i in range(len(headers))))
+
+
+def _render_product_info_as_table(info_data):
+    """Render the product info as a table."""
+    if not isinstance(info_data, dict) or not info_data:
         return False
+
+    _key_labels = {
+        "base_port":   "Base Port",
+        "no_of_group": "Max Groups",
+        "no_of_port":  "Max Ports",
+        "no_of_user":  "Max Users",
+    }
+
+    title = "Product Configuration & Limits"
+    click.echo(title)
+    click.echo("-" * len(title))
+    for key in sorted(info_data.keys()):
+        label = _key_labels.get(key, key)
+        value = info_data.get(key)
+        click.echo(f"{label:<16} : {value}")
+    return True
+
+
+def _render_config_section_as_table(config_data, section_name):
+    if section_name == "users":
+        users = config_data.get("users", {})
+        if not isinstance(users, dict):
+            return False
+        rows = []
+        for username in sorted(users.keys()):
+            user_cfg = users.get(username, {}) or {}
+            groups = user_cfg.get("groups", [])
+            role = user_cfg.get("role", "-")
+            rows.append([username, groups, role])
+        _print_table(["user", "group", "role"], rows)
+        return True
+
+    if section_name == "groups":
+        groups = config_data.get("groups", {})
+        if not isinstance(groups, dict):
+            return False
+        rows = []
+        for group_name in sorted(groups.keys()):
+            group_cfg = groups.get(group_name, {}) or {}
+            port_list = group_cfg.get("port_list", [])
+            role = group_cfg.get("role", "-")
+            rows.append([group_name, port_list, role])
+        _print_table(["group", "port_list", "role"], rows)
+        return True
+
+    return False
+
+
+def _render_lines_section(config_data):
+    lines = config_data.get("lines", {})
+    if not isinstance(lines, dict) or not lines:
+        return False
+
+    # Fetch base_port for tcp_port calculation (same source as show_product_info)
+    base_port = 0
+    try:
+        retcode, stdout, _ = _run_status_cmd(['show-product-info'], quiet_on_success=True)
+        if retcode == 0 and stdout:
+            info_data = json.loads(stdout)
+            base_port = int(info_data.get("base_port", 0))
+    except Exception:
+        pass
+
+    def _line_sort_key(value):
+        text = str(value).strip()
+        if text.isdigit():
+            return (0, int(text), text)
+        return (1, text)
+
+    display_fields = [
+        "line",
+        "tcp_port",
+        "label",
+        "mode",
+        "max_clients",
+        "idle_timeout",
+        "baudrate",
+        "databits",
+        "stopbits",
+        "parity",
+        "flowcontrol",
+        "interface",
+    ]
+    rows = []
+    for line_key in sorted(lines.keys(), key=_line_sort_key):
+        line_cfg = lines.get(line_key, {}) or {}
+        try:
+            tcp_port = base_port + int(line_key)
+        except (ValueError, TypeError):
+            tcp_port = None
+        rows.append([
+            line_key,
+            tcp_port,
+            line_cfg.get("label"),
+            line_cfg.get("mode"),
+            line_cfg.get("max_clients"),
+            line_cfg.get("idle_timeout"),
+            line_cfg.get("baudrate"),
+            line_cfg.get("databits"),
+            line_cfg.get("stopbits"),
+            line_cfg.get("parity"),
+            line_cfg.get("flowcontrol"),
+            line_cfg.get("interface"),
+        ])
+    _print_table(display_fields, rows)
+
+    return True
+
+
+def _display_show_output(stdout, *, show_groups=False, show_users=False, show_line=False):
+    if not stdout:
+        return
+
+    try:
+        parsed = json.loads(stdout)
+    except Exception:
+        click.echo(stdout, nl=False)
+        return
+
+    rendered_any = False
+    if show_users:
+        rendered_any = _render_config_section_as_table(parsed, "users") or rendered_any
+    if show_groups:
+        if rendered_any:
+            click.echo("")
+        rendered_any = _render_config_section_as_table(parsed, "groups") or rendered_any
+    if show_line:
+        if rendered_any:
+            click.echo("")
+        rendered_any = _render_lines_section(parsed) or rendered_any
+
+    if rendered_any:
+        return
+
+    click.echo(stdout, nl=False)
+
+
+def _normalize_line_selector(line_id):
+    if line_id is None:
+        return None
+    normalized = str(line_id).strip()
+    if not normalized:
+        return None
+    if normalized.lower() == "all":
+        return "all"
+    return normalized
 
 def get_user_and_role():
     try:
         user = pwd.getpwuid(os.getuid()).pw_name
     except Exception:
         user = os.getenv("LOGNAME") or os.getenv("USER", "unknown")
+
     # Get role from seriald-status via subprocess
-    status_cmds = [
-        ["/usr/bin/python3", "/usr/local/bin/seriald-status", "user-role", user],
-        [sys.executable, os.path.join(os.path.dirname(__file__), "tools", "seriald", "status.py"), "user-role", user],
-        [sys.executable, "tools/seriald/status.py", "user-role", user],
-    ]
+    retcode, stdout, stderr = _run_status_cmd(["user-role", user], quiet_on_success=True)
+
     role_str = None
-    for args in status_cmds:
-        try:
-            # print("Running command to get user role:", " ".join(args))
-            res = subprocess.run(args, capture_output=True, text=True)
-            if res.returncode == 0 and res.stdout:
-                role_str = res.stdout.strip()
-                break
-        except Exception:
-            pass
-    if role_str in UserRole._value2member_map_:
+    if retcode == 0 and stdout:
+        role_str = stdout.strip()
+
+    if role_str and role_str in UserRole._value2member_map_:
         role = UserRole(role_str)
     else:
-        print("Failed to get role from seriald-status, defaulting to OPERATOR")
+        is_debug = os.path.exists(DEBUG_STATE_FILE) or '--debug' in sys.argv
+        if is_debug:
+            click.echo(f"Warning: Failed to get role for '{user}'. "
+                       f"Retcode: {retcode}, Stderr: {stderr.strip()}", err=True)
+        # Default to a safe, non-privileged role if lookup fails
         role = UserRole.OPERATOR
     return user, role
 
@@ -316,11 +477,17 @@ _current_user = None
 _current_user_role = None
 
 @click.group(cls=RoleAwareGroup)
+@click.option('--debug', is_flag=True, help='Enable detailed debug output for this command.')
 @click.pass_context
-def cli(ctx):
+def cli(ctx, debug):
     """Console Server CLI (Click version)"""
     # print("[debug-cli] Initializing console-cli...")
     ctx.ensure_object(dict)
+
+    # Store debug flag in context if present
+    if debug:
+        ctx.obj['debug'] = True
+
     user, role = get_user_and_role()
     # print(f"Logged in as: {user}, Role: {role.value}")
     ctx.obj['user'] = user
@@ -335,6 +502,26 @@ def cli(ctx):
     ctx.obj['manager'] = manager
     ctx.obj['fake_serial'] = fake_serial
 
+
+@cli.command()
+def debug():
+    """Enable persistent debug mode."""
+    try:
+        with open(DEBUG_STATE_FILE, "w") as f:
+            f.write("enabled")
+        click.echo("Debug mode enabled.")
+    except IOError as e:
+        click.echo(f"Error enabling debug mode: {e}", err=True)
+
+@cli.command()
+def no_debug():
+    """Disable persistent debug mode."""
+    try:
+        if os.path.exists(DEBUG_STATE_FILE):
+            os.remove(DEBUG_STATE_FILE)
+        click.echo("Debug mode disabled.")
+    except IOError as e:
+        click.echo(f"Error disabling debug mode: {e}", err=True)
 
 @cli.command()
 @click.argument('line_id', type=int)
@@ -424,10 +611,14 @@ def port(port_number, baudrate, databits, parity, stopbits, flowcontrol):
         click.echo("No settings provided to configure.", err=True)
         return
 
-    if _run_status_cmd(cmd_args):
+    retcode, stdout, stderr = _run_status_cmd(cmd_args, quiet_on_success=True)
+    if retcode == 0:
         click.echo("Set serial port configuration    : Success")
+        if stdout.strip(): click.echo(stdout)
     else:
         click.echo("Set serial port configuration    : Failed", err=True)
+        if stderr.strip(): click.echo(stderr, err=True)
+        sys.exit(1)
 
 @config.command()
 @click.argument('port_number', type=int)
@@ -451,18 +642,26 @@ def operation(port_number, mode, max_clients, idle_timeout, label):
         click.echo("No settings provided to configure.", err=True)
         return
 
-    if _run_status_cmd(cmd_args):
+    retcode, stdout, stderr = _run_status_cmd(cmd_args, quiet_on_success=True)
+    if retcode == 0:
         click.echo("Set serial operation configuration    : Success")
+        if stdout.strip(): click.echo(stdout)
     else:
         click.echo("Set serial operation configuration    : Failed", err=True)
+        if stderr.strip(): click.echo(stderr, err=True)
+        sys.exit(1)
 
 @config.command(name='save')
 def save():
     """Saves the current running configuration to the startup-config (config.json)."""
-    if _run_status_cmd(['save-config']):
+    retcode, stdout, stderr = _run_status_cmd(['save-config'], quiet_on_success=True)
+    if retcode == 0:
         click.echo("Configuration saved successfully.")
+        if stdout.strip(): click.echo(stdout)
     else:
         click.echo("Failed to save configuration.", err=True)
+        if stderr.strip(): click.echo(stderr, err=True)
+        sys.exit(1)
 
 @config.group()
 def user():
@@ -485,19 +684,29 @@ def user_add(username, role, groups, password):
     if password:
         cmd_args.extend(["--password", password])
 
-    if _run_status_cmd(cmd_args):
+    retcode, stdout, stderr = _run_status_cmd(cmd_args, quiet_on_success=True)
+    if retcode == 0:
         click.echo("User configuration updated successfully.")
+        if stdout.strip(): click.echo(stdout)
     else:
         click.echo("Failed to update user configuration.", err=True)
+        detail = stderr.strip() or stdout.strip()
+        if detail:
+            click.echo(detail, err=True)
+        sys.exit(1)
 
 @user.command(name='delete')
 @click.argument('username', type=str)
 def user_delete(username):
     """Deletes a user."""
-    if _run_status_cmd(["config-no-user", username]):
+    retcode, stdout, stderr = _run_status_cmd(["config-no-user", username], quiet_on_success=True)
+    if retcode == 0:
         click.echo(f"User '{username}' deleted successfully.")
+        if stdout.strip(): click.echo(stdout)
     else:
         click.echo(f"Failed to delete user '{username}'.", err=True)
+        if stderr.strip(): click.echo(stderr, err=True)
+        sys.exit(1)
 
 def parse_ports(ports_str: str) -> str:
     """Parses a string of ports, which can include ranges (e.g., '1-5') and individual numbers."""
@@ -547,19 +756,31 @@ def group_add(groupname, ports, role):
     if role:
         cmd_args.extend(["--role", role])
 
-    if _run_status_cmd(cmd_args):
+    retcode, stdout, stderr = _run_status_cmd(cmd_args, quiet_on_success=True)
+    if retcode == 0:
         click.echo("Group configuration updated successfully.")
+        if stdout.strip(): click.echo(stdout)
     else:
         click.echo("Failed to update group configuration.", err=True)
+        detail = stderr.strip() or stdout.strip()
+        if detail:
+            click.echo(detail, err=True)
+        sys.exit(1)
 
 @group.command(name='delete')
 @click.argument('groupname', type=str)
 def group_delete(groupname):
     """Deletes a group."""
-    if _run_status_cmd(["config-no-group", groupname]):
+    retcode, stdout, stderr = _run_status_cmd(["config-no-group", groupname], quiet_on_success=True)
+    if retcode == 0:
         click.echo(f"Group '{groupname}' deleted successfully.")
+        if stdout.strip(): click.echo(stdout)
     else:
         click.echo(f"Failed to delete group '{groupname}'.", err=True)
+        detail = stderr.strip() or stdout.strip()
+        if detail:
+            click.echo(detail, err=True)
+        sys.exit(1)
 
 cli.add_command(config)
 
@@ -569,43 +790,101 @@ def show():
     pass
 
 @show.command(name='running-config')
-@click.option('--line', 'line_id', help='Display config for a specific line (ID or label).')
+@click.option('--line', 'line_id', help='Display config for a specific line (ID/label) or all.')
 @click.option('--groups', is_flag=True, help='Display groups configuration.')
 @click.option('--users', is_flag=True, help='Display users configuration.')
-def show_running_config(line_id, groups, users):
+@click.option('--json', 'output_json', is_flag=True, help='Output raw JSON.')
+def show_running_config(line_id, groups, users, output_json):
     """Displays the current, active (in-memory) configuration."""
     cmd_args = ['show-running-config']
-    if line_id:
-        cmd_args.extend(['--line', line_id])
+    normalized_line_id = _normalize_line_selector(line_id)
+    if normalized_line_id:
+        cmd_args.extend(['--line', normalized_line_id])
     if groups:
         cmd_args.append('--groups')
     if users:
         cmd_args.append('--users')
-    _run_status_cmd(cmd_args)
+    retcode, stdout, stderr = _run_status_cmd(cmd_args)
+    if output_json:
+        if stdout:
+            click.echo(stdout, nl=False)
+    else:
+        _display_show_output(
+            stdout,
+            show_groups=groups,
+            show_users=users,
+            show_line=normalized_line_id is not None,
+        )
+    if retcode != 0 and stderr.strip():
+        click.echo(stderr, err=True)
 
 @show.command(name='startup-config')
-@click.option('--line', 'line_id', help='Display config for a specific line (ID or label).')
+@click.option('--line', 'line_id', help='Display config for a specific line (ID/label) or all.')
 @click.option('--groups', is_flag=True, help='Display groups configuration.')
 @click.option('--users', is_flag=True, help='Display users configuration.')
-def show_startup_config(line_id, groups, users):
+@click.option('--json', 'output_json', is_flag=True, help='Output raw JSON.')
+def show_startup_config(line_id, groups, users, output_json):
     """Displays the saved (startup) configuration."""
     cmd_args = ['show-startup-config']
-    if line_id:
-        cmd_args.extend(['--line', line_id])
+    normalized_line_id = _normalize_line_selector(line_id)
+    if normalized_line_id:
+        cmd_args.extend(['--line', normalized_line_id])
     if groups:
         cmd_args.append('--groups')
     if users:
         cmd_args.append('--users')
-    _run_status_cmd(cmd_args)
+    retcode, stdout, stderr = _run_status_cmd(cmd_args)
+    if output_json:
+        if stdout:
+            click.echo(stdout, nl=False)
+    else:
+        _display_show_output(
+            stdout,
+            show_groups=groups,
+            show_users=users,
+            show_line=normalized_line_id is not None,
+        )
+    if retcode != 0 and stderr.strip():
+        click.echo(stderr, err=True)
 
 @show.command(name='sessions')
 @click.option('--line', 'line_id', type=int, help='Filter sessions for a specific line ID.')
-def show_sessions_cmd(line_id):
+@click.option('--json', 'output_json', is_flag=True, help='Output raw JSON.')
+def show_sessions_cmd(line_id, output_json):
     """Displays active client sessions."""
     cmd_args = ['sessions']
     if line_id is not None:
         cmd_args.extend(['--line', str(line_id)])
-    _run_status_cmd(cmd_args)
+    if output_json:
+        cmd_args.append('--json')
+    retcode, stdout, stderr = _run_status_cmd(cmd_args)
+    if stdout:
+        click.echo(stdout, nl=False)
+    if retcode != 0 and stderr.strip():
+        click.echo(stderr, err=True)
+
+@show.command(name='product-info')
+@click.option('--json', 'output_json', is_flag=True, help='Output raw JSON.')
+def show_product_info(output_json):
+    """Displays product information (base_port, limits, etc.)."""
+    cmd_args = ['show-product-info']
+    retcode, stdout, stderr = _run_status_cmd(cmd_args)
+
+    if output_json or retcode != 0:
+        # For JSON output or errors, show raw output
+        if stdout:
+            click.echo(stdout, nl=False)
+    else:
+        # For table format, parse and render
+        if stdout:
+            try:
+                info_data = json.loads(stdout)
+                _render_product_info_as_table(info_data)
+            except Exception:
+                click.echo(stdout, nl=False)
+
+    if retcode != 0 and stderr.strip():
+        click.echo(stderr, err=True)
 
 cli.add_command(show)
 

@@ -8,7 +8,7 @@ fi
 
 read -r _client_ip _client_port _server_ip server_port <<<"$SSH_CONNECTION"
 
-base=20000
+base={{BASE_PORT}}
 
 if [[ "$server_port" == "22" ]]; then
   if [[ "${DRY_RUN:-}" == "1" ]]; then
