@@ -384,6 +384,7 @@ Use this command to verify the configuration that will be applied after a reboot
 **Required Privilege:** operator or higher (console-server, admin)
 
 This command displays active client sessions connected to the `seriald` server.
+Each session includes a daemon-generated `session_id` so reconnects and same-host connections can be distinguished reliably.
 
 ```bash
 console-cli show sessions [--line <line_id>] [--json]
@@ -396,7 +397,7 @@ console-cli show sessions [--line <line_id>] [--json]
 | **--json** | Optional. Outputs raw JSON. If omitted, CLI-friendly output is used. |
 
 ### **Usage Guidelines**
-Use this command to get a real-time view of all connected clients. It provides details on which user is connected to which line, their role (writer or observer), and their connection information. This is useful for monitoring server activity and troubleshooting connection issues.
+Use this command to get a real-time view of all connected clients. It provides details on which user is connected to which line, their stable `session_id`, role (writer or observer), and connection information. This is useful for monitoring server activity and troubleshooting connection issues.
 
 ### **Example**
 ```bash
@@ -408,9 +409,9 @@ Use this command to get a real-time view of all connected clients. It provides d
 
 Daemon Sessions:
 - line 1 [exclusive] : writer=ted (clients=3, writers=1, observers=2)
-    - ted role=writer ip=127.0.0.1 port=40262 [timeout=600s, left=455s]
-    - ted role=observer ip=127.0.0.1 port=60854 [timeout=600s, left=502s]
-    - alice role=observer ip=127.0.0.1 port=48464 [timeout=600s, left=577s]
+  - ted role=writer session_id=5f2a3b7c ip=127.0.0.1 port=40262 [timeout=600s, left=455s]
+  - ted role=observer session_id=8c9d1204 ip=127.0.0.1 port=60854 [timeout=600s, left=502s]
+  - alice role=observer session_id=2f01aa91 ip=127.0.0.1 port=48464 [timeout=600s, left=577s]
 - line 2 [shared] : writer=none (clients=0, writers=0, observers=0)
 
 # Show sessions for a specific line
@@ -418,9 +419,9 @@ Daemon Sessions:
 
 Daemon Sessions:
 - line 1 [exclusive] : writer=ted (clients=3, writers=1, observers=2)
-    - ted role=writer ip=127.0.0.1 port=40262 [timeout=600s, left=455s]
-    - ted role=observer ip=127.0.0.1 port=60854 [timeout=600s, left=502s]
-    - alice role=observer ip=127.0.0.1 port=48464 [timeout=600s, left=577s]
+  - ted role=writer session_id=5f2a3b7c ip=127.0.0.1 port=40262 [timeout=600s, left=455s]
+  - ted role=observer session_id=8c9d1204 ip=127.0.0.1 port=60854 [timeout=600s, left=502s]
+  - alice role=observer session_id=2f01aa91 ip=127.0.0.1 port=48464 [timeout=600s, left=577s]
 ```
 
 ### **Output Field Descriptions**
@@ -432,6 +433,7 @@ Daemon Sessions:
 - `(clients=N, writers=N, observers=N)`: A count of total clients, writers, and observers for the line.
 
 **Client Details (indented):**
+- `session_id`: The daemon-generated stable identifier for the session.
 - `username`: The name of the connected user.
 - `role`: The user's role in the session (`writer` or `observer`).
 - `ip`: The IP address of the client.

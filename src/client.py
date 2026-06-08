@@ -69,6 +69,7 @@ async def bridge(host: str, port: int, line: int, want_writer: bool):
         "fakeserial": False,
         "ser2net_host": None,
         "ser2net_port": None,
+        "session_id": None,
     }
 
     # Control plane connection (seriald)
@@ -127,8 +128,11 @@ async def bridge(host: str, port: int, line: int, want_writer: bool):
         is_fakeserial = role_holder["fakeserial"]
         ser2net_host = role_holder["ser2net_host"]
         ser2net_port = role_holder["ser2net_port"]
+        session_id = role_holder["session_id"]
 
-        logging.info(f"Session established: line={line}, role={role}, mode={mode}, fakeserial={is_fakeserial}, ser2net_host={ser2net_host}, ser2net_port={ser2net_port}")
+        logging.info(f"Session established: session_id={session_id}, line={line}, role={role}, mode={mode}, fakeserial={is_fakeserial}, ser2net_host={ser2net_host}, ser2net_port={ser2net_port}")
+        if session_id:
+            write_stdout(f"[Session ID: {session_id}]\r\n".encode())
         write_stdout(f"[Attached to line {line} as {role} in {mode} mode]\r\n".encode())
         write_stdout(b"Tip: Press ~. to detach.\r\n")
 
@@ -224,6 +228,7 @@ async def control_plane_handler(reader, writer, attach_event, role_holder, done_
         role_holder["fakeserial"] = msg.get("fakeserial", False)
         role_holder["ser2net_host"] = msg.get("ser2net_host")
         role_holder["ser2net_port"] = msg.get("ser2net_port")
+        role_holder["session_id"] = msg.get("session_id")
         attach_event.set()
 
         # 2. Process subsequent messages from the server

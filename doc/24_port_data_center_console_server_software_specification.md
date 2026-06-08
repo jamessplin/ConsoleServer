@@ -92,11 +92,7 @@ Each port shall support:
 ## 5. Multi-User & Session Management
 
 ### 5.1 Multi-Session Access
-- The system **must support multiple concurrent user sessions**
-- Multiple users may be logged into the console server simultaneously
-- Each user may access different serial ports concurrently
-- System shall handle ≥48 concurrent sessions (per requirements in Section 11)
-- Sessions shall be isolated and independent
+- Each session shall have a daemon-generated stable `session_id`; the client source port is informational and may be reused by the TCP stack on reconnect.
 
 ### 5.2 Port Access Modes
 - **Single-User Mode**
