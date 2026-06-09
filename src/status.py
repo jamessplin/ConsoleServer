@@ -96,7 +96,9 @@ def render_status(status: dict) -> bytes:
         mode = entry.get("mode")
         writer_user = entry.get("writer")
         counts = entry.get("counts", {})
-        out.append(f"- line {line} [{mode}] : writer={writer_user or 'none'} "
+        # In shared mode there is no single authoritative writer owner.
+        writer_display = "n/a" if mode == "shared" else (writer_user or "none")
+        out.append(f"- line {line} [{mode}] : writer={writer_display} "
                    f"(clients={counts.get('clients',0)}, writers={counts.get('writers',0)}, observers={counts.get('observers',0)})\n")
         for c in entry.get("clients", []):
             session_id = c.get('session_id')

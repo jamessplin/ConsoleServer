@@ -412,7 +412,7 @@ Daemon Sessions:
   - ted role=writer session_id=5f2a3b7c ip=127.0.0.1 port=40262 [timeout=600s, left=455s]
   - ted role=observer session_id=8c9d1204 ip=127.0.0.1 port=60854 [timeout=600s, left=502s]
   - alice role=observer session_id=2f01aa91 ip=127.0.0.1 port=48464 [timeout=600s, left=577s]
-- line 2 [shared] : writer=none (clients=0, writers=0, observers=0)
+- line 2 [shared] : writer=n/a (clients=0, writers=0, observers=0)
 
 # Show sessions for a specific line
 > console-cli show sessions --line 1
@@ -429,7 +429,7 @@ Daemon Sessions:
 **Line Summary:**
 - `line <id>`: The serial line number.
 - `[mode]`: The connection mode for the line (`exclusive` or `shared`).
-- `writer`: The username of the client who currently has write permission. `none` if no writer is active.
+- `writer`: In `exclusive` mode, the username of the current writer (`none` if no writer is active). In `shared` mode, this field is `n/a` because writer ownership is not singular.
 - `(clients=N, writers=N, observers=N)`: A count of total clients, writers, and observers for the line.
 
 **Client Details (indented):**

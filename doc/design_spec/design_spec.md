@@ -204,7 +204,7 @@ Daemon Sessions:
 - line 1 [exclusive] : writer=bob (clients=2, writers=1, observers=1)
         - bob role=writer
         - alice role=observer
-- line 2 [shared] : writer=none (clients=0, writers=0, observers=0)
+- line 2 [shared] : writer=n/a (clients=0, writers=0, observers=0)
 ```
 
 Username resolution in the client (best effort):
