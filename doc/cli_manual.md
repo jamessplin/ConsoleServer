@@ -403,16 +403,52 @@ Use this command to get a real-time view of all connected clients. It provides d
 ```bash
 # Show all active sessions across all lines
 > console-cli show sessions
-
-# Show all active sessions as raw JSON
-> console-cli show sessions --json
-
-Daemon Sessions:
 - line 1 [exclusive] : writer=ted (clients=3, writers=1, observers=2)
   - ted role=writer session_id=5f2a3b7c ip=127.0.0.1 port=40262 [timeout=600s, left=455s]
   - ted role=observer session_id=8c9d1204 ip=127.0.0.1 port=60854 [timeout=600s, left=502s]
   - alice role=observer session_id=2f01aa91 ip=127.0.0.1 port=48464 [timeout=600s, left=577s]
 - line 2 [shared] : writer=n/a (clients=0, writers=0, observers=0)
+
+# Show all active sessions as raw JSON
+> console-cli show sessions --json
+{
+  "op": "status",
+  "lines": [
+    {
+      "line": 1,
+      "mode": "shared",
+      "writer": null,
+      "counts": {
+        "clients": 2,
+        "writers": 2,
+        "observers": 0
+      },
+      "clients": [
+        {
+          "session_id": "7597085218a34fc28cc245dac2105838",
+          "user": "bmc",
+          "role": "writer",
+          "ip": "127.0.0.1",
+          "port": 45656,
+          "idle_timeout": 600,
+          "last_activity": 1780975227.3674657,
+          "time_left": 77
+        },
+        {
+          "session_id": "76f60e56c77c41fa98c715aaa3ef757f",
+          "user": "bmc",
+          "role": "writer",
+          "ip": "10.19.112.103",
+          "port": 54376,
+          "idle_timeout": 600,
+          "last_activity": 1780975248.872936,
+          "time_left": 98
+        }
+      ]
+    },
+    {
+      "line": 2,
+
 
 # Show sessions for a specific line
 > console-cli show sessions --line 1
