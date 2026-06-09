@@ -96,13 +96,17 @@ def render_status(status: dict) -> bytes:
         mode = entry.get("mode")
         writer_user = entry.get("writer")
         counts = entry.get("counts", {})
-        out.append(f"- line {line} [{mode}] : writer={writer_user or 'none'} "
+        # In shared mode there is no single authoritative writer owner.
+        writer_display = "n/a" if mode == "shared" else (writer_user or "none")
+        out.append(f"- line {line} [{mode}] : writer={writer_display} "
                    f"(clients={counts.get('clients',0)}, writers={counts.get('writers',0)}, observers={counts.get('observers',0)})\n")
         for c in entry.get("clients", []):
+            session_id = c.get('session_id')
             ip = c.get('ip')
             port = c.get('port')
             ip_port = f" ip={ip}" if ip else ""
             ip_port += f" port={port}" if port else ""
+            session_info = f" session_id={session_id}" if session_id else ""
             idle_timeout = c.get('idle_timeout')
             time_left = c.get('time_left')
             timeout_info = ""
@@ -111,7 +115,7 @@ def render_status(status: dict) -> bytes:
                     timeout_info = f" [timeout={idle_timeout}s, left={time_left}s]"
                 else:
                     timeout_info = f" [timeout={idle_timeout}s]"
-            out.append(f"    - {c.get('user','unknown')} role={c.get('role','?')}{ip_port}{timeout_info}\n")
+            out.append(f"    - {c.get('user','unknown')} role={c.get('role','?')}{session_info}{ip_port}{timeout_info}\n")
     return "".join(out).encode()
 
 

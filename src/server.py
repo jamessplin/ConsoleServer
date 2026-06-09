@@ -7,6 +7,7 @@ import re
 import threading
 import queue
 import time
+from uuid import uuid4
 from dataclasses import dataclass
 import logging
 import sys
@@ -200,6 +201,7 @@ class FakeSerialDevice:
 @dataclass(eq=False)
 class Client:
     writer: asyncio.StreamWriter
+    session_id: str | None = None
     line_id: int | None = None
     can_write: bool = False
     user: Optional[str] = None
@@ -697,7 +699,7 @@ class SerialDaemon:
         client_id = f"{ip}:{port}"
         logging.debug(f"Connection opened from {client_id}")
 
-        client = Client(writer=writer, ip=ip, port=port)
+        client = Client(writer=writer, session_id=uuid4().hex, ip=ip, port=port)
         now = time.time()
         self._last_activity[client] = now
         # If Session object is used, pass IP/port when creating
@@ -856,6 +858,7 @@ class SerialDaemon:
                     await self._send(writer, {
                         "op": "attach",
                         "ok": True,
+                        "session_id": client.session_id,
                         "role": "writer" if can_write else "observer",
                         "line": line_id,
                         "mode": line_cfg.get("mode", "exclusive"),
@@ -906,6 +909,7 @@ class SerialDaemon:
                             else:
                                 time_left = None
                             lines[line_id].setdefault("clients", []).append({
+                                "session_id": c.session_id,
                                 "user": c.user or "unknown",
                                 "role": role,
                                 "ip": c.ip,

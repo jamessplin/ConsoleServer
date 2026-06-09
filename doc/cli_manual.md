@@ -384,6 +384,7 @@ Use this command to verify the configuration that will be applied after a reboot
 **Required Privilege:** operator or higher (console-server, admin)
 
 This command displays active client sessions connected to the `seriald` server.
+Each session includes a daemon-generated `session_id` so reconnects and same-host connections can be distinguished reliably.
 
 ```bash
 console-cli show sessions [--line <line_id>] [--json]
@@ -396,31 +397,67 @@ console-cli show sessions [--line <line_id>] [--json]
 | **--json** | Optional. Outputs raw JSON. If omitted, CLI-friendly output is used. |
 
 ### **Usage Guidelines**
-Use this command to get a real-time view of all connected clients. It provides details on which user is connected to which line, their role (writer or observer), and their connection information. This is useful for monitoring server activity and troubleshooting connection issues.
+Use this command to get a real-time view of all connected clients. It provides details on which user is connected to which line, their stable `session_id`, role (writer or observer), and connection information. This is useful for monitoring server activity and troubleshooting connection issues.
 
 ### **Example**
 ```bash
 # Show all active sessions across all lines
 > console-cli show sessions
+- line 1 [exclusive] : writer=ted (clients=3, writers=1, observers=2)
+  - ted role=writer session_id=5f2a3b7c ip=127.0.0.1 port=40262 [timeout=600s, left=455s]
+  - ted role=observer session_id=8c9d1204 ip=127.0.0.1 port=60854 [timeout=600s, left=502s]
+  - alice role=observer session_id=2f01aa91 ip=127.0.0.1 port=48464 [timeout=600s, left=577s]
+- line 2 [shared] : writer=n/a (clients=0, writers=0, observers=0)
 
 # Show all active sessions as raw JSON
 > console-cli show sessions --json
+{
+  "op": "status",
+  "lines": [
+    {
+      "line": 1,
+      "mode": "shared",
+      "writer": null,
+      "counts": {
+        "clients": 2,
+        "writers": 2,
+        "observers": 0
+      },
+      "clients": [
+        {
+          "session_id": "7597085218a34fc28cc245dac2105838",
+          "user": "bmc",
+          "role": "writer",
+          "ip": "127.0.0.1",
+          "port": 45656,
+          "idle_timeout": 600,
+          "last_activity": 1780975227.3674657,
+          "time_left": 77
+        },
+        {
+          "session_id": "76f60e56c77c41fa98c715aaa3ef757f",
+          "user": "bmc",
+          "role": "writer",
+          "ip": "10.19.112.103",
+          "port": 54376,
+          "idle_timeout": 600,
+          "last_activity": 1780975248.872936,
+          "time_left": 98
+        }
+      ]
+    },
+    {
+      "line": 2,
 
-Daemon Sessions:
-- line 1 [exclusive] : writer=ted (clients=3, writers=1, observers=2)
-    - ted role=writer ip=127.0.0.1 port=40262 [timeout=600s, left=455s]
-    - ted role=observer ip=127.0.0.1 port=60854 [timeout=600s, left=502s]
-    - alice role=observer ip=127.0.0.1 port=48464 [timeout=600s, left=577s]
-- line 2 [shared] : writer=none (clients=0, writers=0, observers=0)
 
 # Show sessions for a specific line
 > console-cli show sessions --line 1
 
 Daemon Sessions:
 - line 1 [exclusive] : writer=ted (clients=3, writers=1, observers=2)
-    - ted role=writer ip=127.0.0.1 port=40262 [timeout=600s, left=455s]
-    - ted role=observer ip=127.0.0.1 port=60854 [timeout=600s, left=502s]
-    - alice role=observer ip=127.0.0.1 port=48464 [timeout=600s, left=577s]
+  - ted role=writer session_id=5f2a3b7c ip=127.0.0.1 port=40262 [timeout=600s, left=455s]
+  - ted role=observer session_id=8c9d1204 ip=127.0.0.1 port=60854 [timeout=600s, left=502s]
+  - alice role=observer session_id=2f01aa91 ip=127.0.0.1 port=48464 [timeout=600s, left=577s]
 ```
 
 ### **Output Field Descriptions**
@@ -428,10 +465,11 @@ Daemon Sessions:
 **Line Summary:**
 - `line <id>`: The serial line number.
 - `[mode]`: The connection mode for the line (`exclusive` or `shared`).
-- `writer`: The username of the client who currently has write permission. `none` if no writer is active.
+- `writer`: In `exclusive` mode, the username of the current writer (`none` if no writer is active). In `shared` mode, this field is `n/a` because writer ownership is not singular.
 - `(clients=N, writers=N, observers=N)`: A count of total clients, writers, and observers for the line.
 
 **Client Details (indented):**
+- `session_id`: The daemon-generated stable identifier for the session.
 - `username`: The name of the connected user.
 - `role`: The user's role in the session (`writer` or `observer`).
 - `ip`: The IP address of the client.
