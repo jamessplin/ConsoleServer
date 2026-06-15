@@ -625,3 +625,169 @@ Runtime session state in ConfigDB
 ```
 
 This keeps the first YANG/CVL implementation focused and avoids security-sensitive or runtime-only data.
+
+---
+
+## 13. SONiC CLI Command Convention
+
+The console server feature should expose native SONiC-style commands.
+
+### 13.1 Feature Name
+
+Use:
+
+```text
+console-server
+```
+
+Do not use:
+
+```text
+consoleserver
+console_server
+```
+
+Reason:
+
+- `console-server` is clearer for a multiword feature name.
+- It matches the YANG model name `sonic-console-server.yang`.
+- It avoids using the overly broad name `console`.
+- It fits common SONiC CLI naming style for multiword feature groups.
+
+### 13.2 Command Hierarchy
+
+Do not place `show` or `connect` operations below the top-level `config` command.
+
+Incorrect:
+
+```bash
+config consoleserver config
+config consoleserver show
+config consoleserver connect
+```
+
+Recommended structure:
+
+```bash
+# Configuration
+sudo config console-server port <port_number> [OPTIONS]
+sudo config console-server operation <port_number> [OPTIONS]
+sudo config console-server group add <group_name> [OPTIONS]
+sudo config console-server group del <group_name>
+
+# Display
+show console-server running-config
+show console-server startup-config
+show console-server sessions
+show console-server product-info
+
+# Interactive connection
+connect line <port_number>
+
+# Persist ConfigDB
+sudo config save
+```
+
+### 13.3 Configuration Examples
+
+```bash
+sudo config console-server port 5 \
+    --baudrate 9600 \
+    --databits 8 \
+    --parity none \
+    --stopbits 1 \
+    --flowcontrol none
+```
+
+```bash
+sudo config console-server operation 5 \
+    --mode shared \
+    --max-clients 4 \
+    --idle-timeout 600 \
+    --label BackupConsole
+```
+
+```bash
+sudo config console-server group add Group_A \
+    --role console_user \
+    --ports 1-5,8,10-12
+```
+
+The CLI may accept a friendly port range, but the shared config manager must convert it into normalized `CONSOLE_SERVER_GROUP_PORT` entries before writing ConfigDB.
+
+### 13.4 Show Command Examples
+
+```bash
+show console-server running-config
+show console-server running-config --port 5
+show console-server running-config --groups
+
+show console-server startup-config
+show console-server sessions
+show console-server sessions --port 5
+show console-server sessions --json
+
+show console-server product-info
+```
+
+`show console-server sessions` displays runtime-only data supplied by `seriald`.
+
+### 13.5 Connect Command
+
+Use:
+
+```bash
+connect line <port_number>
+```
+
+Example:
+
+```bash
+connect line 3
+```
+
+Do not use:
+
+```bash
+config console-server connect 3
+```
+
+Connection is a runtime action, not a configuration operation.
+
+Fallback, only if integration requires it:
+
+```bash
+connect console-server <port_number>
+```
+
+### 13.6 Save Command
+
+Do not add:
+
+```bash
+config console-server save
+```
+
+Use the standard SONiC command:
+
+```bash
+sudo config save
+```
+
+### 13.7 Shared Implementation
+
+The SONiC CLI and REST API should call the same shared config manager:
+
+```text
+SONiC CLI ─┐
+           ├─> shared console-server config manager
+REST API ──┘          │
+                      ├─ normalize groups and ports
+                      ├─ validate platform max_ports
+                      ├─ enforce unique labels
+                      ├─ invoke CVL/schema validation
+                      └─ write ConfigDB
+```
+
+This prevents the CLI and REST API from applying different conversion or validation rules.
+
