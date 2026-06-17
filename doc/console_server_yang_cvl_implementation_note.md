@@ -325,6 +325,7 @@ module sonic-console-server {
         container CONSOLE_SERVER_PORT {
             list CONSOLE_SERVER_PORT_LIST {
                 key "port";
+                unique "label";
 
                 leaf port {
                     type uint16 {
@@ -335,21 +336,12 @@ module sonic-console-server {
                 }
 
                 leaf baudrate {
-                    type enumeration {
-                        enum 300;
-                        enum 1200;
-                        enum 2400;
-                        enum 4800;
-                        enum 9600;
-                        enum 19200;
-                        enum 38400;
-                        enum 57600;
-                        enum 115200;
-                        enum 230400;
-                        enum 460800;
-                        enum 921600;
+                    type uint32 {
+                        range "300 | 1200 | 2400 | 4800 | 9600 | 19200 | 38400 | 57600 | 115200 | 230400 | 460800 | 921600";
                     }
                     default "115200";
+                    description
+                        "Supported serial baud rate.";
                 }
 
                 leaf databits {
@@ -402,10 +394,13 @@ module sonic-console-server {
                 }
 
                 leaf idle_timeout {
-                    type uint32;
+                    type uint32 {
+                        range "0..86400";
+                    }
                     default "600";
                     description
-                        "Idle timeout in seconds. Value 0 disables timeout.";
+                        "Idle timeout in seconds. A value of 0 disables the idle timeout. "
+                      + "The maximum supported value is 86400 seconds.";
                 }
 
                 leaf label {
@@ -462,9 +457,76 @@ module sonic-console-server {
 
 ---
 
+### 7.2 Design Rationale
+
+The skeleton in Section 7.1 contains several non-obvious modeling choices. The table below records the reasoning for each one so implementers do not revisit settled decisions.
+
+| Choice | Rationale |
+|---|---|
+| `baudrate` as `uint32` with a discrete allowed-value range, not `enumeration` | YANG `enumeration` assigns string identity names to each value. A `uint32` range with discrete values (`300 \| 1200 \| ...`) keeps the leaf numeric and machine-comparable, which aligns with how SONiC models similar integer-valued constraints. |
+| `unique "label"` on the list, not a `must` expression | `unique` is the YANG 1.1 idiomatic statement for enforcing non-key leaf uniqueness across list entries. A `must` XPath over the full list is harder to maintain and less portable across CVL implementations. |
+| `leafref` for both keys of `CONSOLE_SERVER_GROUP_PORT_LIST` | Enforces referential integrity at the CVL level. A group-port mapping entry for a non-existent group or port is rejected at write time, preventing orphan entries. |
+| `idle_timeout` range `0..86400` with `0` meaning disabled | Avoids a separate boolean flag. `0` is the conventional sentinel for "no timeout" across SONiC models. `86400` seconds (24 hours) is the approved upper bound. |
+| No `CONSOLE_SERVER_GLOBAL` container | Product and platform info such as `base_port`, `max_ports`, `max_users`, and `max_groups` is read-only deployment metadata. It must not be modeled as writable ConfigDB data. |
+| No user or password leaf | Passwords must not be stored in ConfigDB. User role and group membership are managed outside YANG scope for this phase. Only `CONSOLE_SERVER_GROUP` and `CONSOLE_SERVER_GROUP_PORT` are in scope. |
+
+---
+
+### 7.3 `pyang` Acceptance Gate
+
+Section 7 is a design draft until the exact final YANG file passes `pyang`.
+
+Before coding starts, perform and record the following:
+
+```bash
+pyang --version
+pyang -p yang-models yang-models/sonic-console-server.yang
+echo $?
+pyang -p yang-models -f tree yang-models/sonic-console-server.yang
+sha256sum yang-models/sonic-console-server.yang
+```
+
+Acceptance criteria:
+
+```text
+Validation result: PASS
+Exit code: 0
+Tree output: generated successfully
+```
+
+Lock the accepted version in this document:
+
+```text
+Validated file:
+sonic-console-server.yang
+
+pyang version:
+<pending>
+
+Validation command:
+pyang -p yang-models yang-models/sonic-console-server.yang
+
+Validation result:
+PENDING
+
+File SHA-256:
+<pending>
+```
+
+Do not mark Section 7 implementation-ready until the exact accepted file content, `pyang` version, validation result, and SHA-256 are recorded.
+
+
 ## 8. Label Uniqueness
 
 Decision: console port labels must be unique.
+
+The YANG list should enforce uniqueness directly:
+
+```yang
+list CONSOLE_SERVER_PORT_LIST {
+    key "port";
+    unique "label";
+```
 
 Example invalid configuration:
 
@@ -481,27 +543,43 @@ Example invalid configuration:
 }
 ```
 
-Recommended first implementation:
+Validation should be performed at two levels:
+
+| Layer | Responsibility |
+|---|---|
+| Shared config manager | Detect duplicates early and return a clear interface-specific error |
+| YANG/CVL | Final schema-level enforcement through `unique "label"` |
+
+### 8.1 Error Contract
+
+Use the following fixed error contract:
+
+| Interface | Result |
+|---|---|
+| CLI exit code | `1` |
+| CLI error code | `CONSOLE_SERVER_LABEL_DUPLICATE` |
+| REST HTTP status | `409 Conflict` |
+| REST error code | `CONSOLE_SERVER_LABEL_DUPLICATE` |
+| Error field | `label` |
+| Message format | `Console port label '<label>' is already used by port <port>.` |
+
+CLI example:
 
 ```text
-Enforce label uniqueness in the shared config manager.
+Error: Console port label 'BackupConsole' is already used by port 1.
 ```
 
-Reason:
+REST example:
 
-```text
-YANG/CVL does not easily enforce uniqueness of a non-key leaf across all list entries in a simple and maintainable way.
+```json
+{
+    "error": {
+        "code": "CONSOLE_SERVER_LABEL_DUPLICATE",
+        "message": "Console port label 'BackupConsole' is already used by port 1.",
+        "field": "label"
+    }
+}
 ```
-
-The shared config manager should reject duplicate labels before writing ConfigDB.
-
-Example error:
-
-```text
-Duplicate console port label 'BackupConsole'. Labels must be unique.
-```
-
----
 
 ## 9. Platform max_ports Handling
 
@@ -556,6 +634,40 @@ If state YANG is required later, create a separate operational/state model. Do n
 
 ---
 
+## 10.1 YANG Hardening Requirements
+
+Before implementation is accepted:
+
+- Validate `sonic-console-server.yang` with `pyang`.
+- Represent `baudrate` as `uint32` with an explicit allowed-value range, not as bare numeric enumeration tokens.
+- Model `idle_timeout = 0` explicitly as disabled behavior.
+- Use the approved `idle_timeout` range `0..86400`; `0` disables the timeout.
+- Enforce label uniqueness with `unique "label"`.
+- Keep the shared config manager error contract aligned between CLI and REST API.
+
+Recommended validation command:
+
+```bash
+pyang -p yang-models yang-models/sonic-console-server.yang
+```
+
+The approved `idle_timeout` definition is:
+
+```yang
+leaf idle_timeout {
+    type uint32 {
+        range "0..86400";
+    }
+    default "600";
+    description
+        "Idle timeout in seconds. A value of 0 disables the idle timeout.";
+}
+```
+
+`86400` seconds is the approved maximum.
+
+---
+
 ## 11. Implementation Checklist
 
 ### 11.1 YANG / CVL
@@ -563,6 +675,11 @@ If state YANG is required later, create a separate operational/state model. Do n
 - [ ] Create `yang-models/sonic-console-server.yang`
 - [ ] Use `prefix cs`
 - [ ] Use single-line `leafref` paths
+- [ ] Model `baudrate` as restricted `uint32`
+- [ ] Add `unique "label"` to `CONSOLE_SERVER_PORT_LIST`
+- [x] Set the supported `idle_timeout` range to `0..86400`
+- [ ] Validate the final YANG with `pyang`
+- [ ] Record the accepted `pyang` version and file SHA-256
 - [ ] Add `CONSOLE_SERVER_PORT`
 - [ ] Add `CONSOLE_SERVER_GROUP`
 - [ ] Add `CONSOLE_SERVER_GROUP_PORT`
@@ -670,10 +787,10 @@ Recommended structure:
 
 ```bash
 # Configuration
-sudo config console-server port <port_number> [OPTIONS]
-sudo config console-server operation <port_number> [OPTIONS]
+sudo config console-server port set <port_number> [OPTIONS]
+sudo config console-server operation set <port_number> [OPTIONS]
 sudo config console-server group add <group_name> [OPTIONS]
-sudo config console-server group del <group_name>
+sudo config console-server group delete <group_name>
 
 # Display
 show console-server running-config
@@ -691,7 +808,7 @@ sudo config save
 ### 13.3 Configuration Examples
 
 ```bash
-sudo config console-server port 5 \
+sudo config console-server port set 5 \
     --baudrate 9600 \
     --databits 8 \
     --parity none \
@@ -700,7 +817,7 @@ sudo config console-server port 5 \
 ```
 
 ```bash
-sudo config console-server operation 5 \
+sudo config console-server operation set 5 \
     --mode shared \
     --max-clients 4 \
     --idle-timeout 600 \
@@ -790,4 +907,147 @@ REST API ──┘          │
 ```
 
 This prevents the CLI and REST API from applying different conversion or validation rules.
+
+---
+
+---
+
+## 14. Operational Command Integration
+
+### 14.1 Show Sessions Command
+
+For the first SONiC implementation, use the existing console-server runtime interface rather than mirroring session state into `STATE_DB`.
+
+Recommended flow:
+
+```text
+show console-server sessions
+        ↓
+console-cli show sessions --json
+        ↓
+seriald socket/internal API
+```
+
+The SONiC `show` command acts as a wrapper and presentation layer.
+
+It should:
+
+1. invoke `console-cli show sessions --json`;
+2. parse the JSON output;
+3. format the result in SONiC CLI style;
+4. return a nonzero exit status if the delegated command fails or returns invalid JSON.
+
+This approach:
+
+- reuses the existing console-server runtime API;
+- avoids duplicating session state in `STATE_DB`;
+- avoids synchronization and stale-data issues;
+- keeps the first SONiC porting effort small;
+- follows the pattern where a SONiC `show` command delegates to a specialized utility.
+
+### 14.2 Data Source
+
+`seriald` remains the authoritative source of active session information.
+
+```text
+seriald local session state
+        ↓
+seriald socket/internal API
+        ↓
+console-cli show sessions --json
+        ↓
+show console-server sessions
+```
+
+The SONiC show command must not parse human-readable console output. It must use the `--json` output as the machine-readable interface.
+
+The JSON schema returned by `console-cli show sessions --json` becomes an internal compatibility contract between:
+
+```text
+seriald / console-cli
+and
+SONiC show console-server sessions
+```
+
+Changes to that JSON schema must be versioned or coordinated with the SONiC wrapper.
+
+### 14.3 Failure Handling
+
+The SONiC wrapper should handle:
+
+| Failure | Required behavior |
+|---|---|
+| `console-cli` executable missing | Return error and nonzero exit status |
+| `seriald` unavailable | Return error and nonzero exit status |
+| Socket/API timeout | Return timeout error and nonzero exit status |
+| Invalid JSON | Return internal data-format error |
+| No active sessions | Return a valid empty result, not an error |
+
+Example errors:
+
+```text
+Error: console server daemon is unavailable.
+```
+
+```text
+Error: failed to retrieve console session information.
+```
+
+### 14.4 Connect Command
+
+Keep the original connect implementation.
+
+Recommended command:
+
+```bash
+connect line <port_number>
+```
+
+Recommended flow:
+
+```text
+connect line <port_number>
+        ↓
+existing console-cli connect implementation
+        ↓
+seriald socket/internal API
+        ↓
+interactive terminal session
+```
+
+Do not route interactive console traffic through `STATE_DB`.
+
+Do not reimplement the terminal transport inside the SONiC wrapper if the existing `console-cli connect` path already provides the required behavior.
+
+### 14.5 STATE_DB Decision
+
+For the initial implementation:
+
+```text
+Do not publish console session information to STATE_DB.
+```
+
+`STATE_DB` integration may be considered later if independent consumers such as telemetry, REST, SNMP, or monitoring need persistent operational state.
+
+If added later, it should be treated as a separate enhancement and should not change the existing interactive `connect` path.
+
+### 14.6 Final Operational Command Decision
+
+```text
+1. seriald remains the authoritative source of session state.
+
+2. show console-server sessions invokes:
+   console-cli show sessions --json
+
+3. console-cli obtains the data from the existing seriald
+   socket/internal API.
+
+4. The SONiC show command parses JSON and formats SONiC output.
+
+5. connect line <port_number> keeps the original existing
+   console-cli/seriald interactive implementation.
+
+6. STATE_DB is not used for session display or interactive data
+   in the first implementation.
+```
 
