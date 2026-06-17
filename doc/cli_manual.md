@@ -321,21 +321,64 @@ Use this command to view the live configuration. By default, it displays the ent
 
 # Show the configuration for line 5
 > console-cli show running-config --line 5
+line  tcp_port  label  mode    max_clients  idle_timeout  baudrate  databits  stopbits  parity  flowcontrol  interface
+----  --------  -----  ------  -----------  ------------  --------  --------  --------  ------  -----------  ---------
+5     35005     COM5   shared  2            600           115200    8         1         none    none         rs232
+
 
 # Show the configuration for the line labeled "Backup Console"
 > console-cli show running-config --line "Backup Console"
 
 # Show all line entries only
 > console-cli show running-config --line all
+line  tcp_port  label         mode       max_clients  idle_timeout  baudrate  databits  stopbits  parity  flowcontrol  interface
+----  --------  ------------  ---------  -----------  ------------  --------  --------  --------  ------  -----------  ---------
+1     35001     xxxT          shared     4            600           115200    8         1         none    none         rs232
+2     35002     COM2-OpenWRT  shared     2            600           115200    8         1         none    none         rs232
+3     35003     COM3          shared     2            600           57600     8         1         none    none         rs232
+4     35004     COM4          shared     2            600           57600     8         1         none    none         rs232
+5     35005     COM5          shared     2            600           115200    8         1         none    none         rs232
+6     35006     COM6          shared     2            600           115200    8         1         none    none         rs232
+7     35007     COM7          shared     2            600           115200    8         1         none    none         rs232
+8     35008     COM8          shared     2            600           115200    8         1         none    none         rs232
+9     35009     COM9          shared     2            600           115200    8         1         none    none         rs232
+10    35010     COM10         shared     2            600           115200    8         1         none    none         rs232
+11    35011     COM11         shared     2            600           115200    8         1         none    none         rs232
+12    35012     COM12         shared     2            600           115200    8         1         none    none         rs232
+13    35013     COM13         shared     2            600           115200    8         1         none    none         rs232
+14    35014     COM14         shared     2            600           115200    8         1         none    none         rs232
+15    35015     COM15         shared     2            600           115200    8         1         none    none         rs232
+16    35016     COM16         shared     2            600           115200    8         1         none    none         rs232
+17    35017     COM17         shared     2            600           115200    8         1         none    none         rs232
+18    35018     COM18         shared     2            600           115200    8         1         none    none         rs232
+19    35019     COM19         shared     2            600           115200    8         1         none    none         rs232
+20    35020     COM20         shared     2            600           115200    8         1         none    none         rs232
+21    35021     COM21         shared     2            600           115200    8         1         none    none         rs232
+22    35022     COM22         shared     2            600           115200    8         1         none    none         rs232
+23    35023     COM23         shared     -            600           115200    8         1         none    none         rs232
+24    35024     COM24         exclusive  1            600           57600     8         1         none    none         rs232
 
 # Show all line entries as raw JSON
 > console-cli show running-config --line all --json
 
 # Show only the groups configuration
 > console-cli show running-config --groups
+group          port_list                                                                              role
+-------------  -------------------------------------------------------------------------------------  ------------
+Group_Default  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24  console_user
+groupA         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15                                              admin
+groupB         13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24                                             admin
+
 
 # Show only the users configuration
 > console-cli show running-config --users
+user   group          role
+-----  -------------  --------
+admin  Group_Default  admin
+bmc    Group_Default  admin
+bob    groupA         none
+ted    groupB         operator
+
 ```
 
 ---
