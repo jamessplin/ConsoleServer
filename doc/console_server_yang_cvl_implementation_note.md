@@ -815,8 +815,9 @@ sudo config console-server user add <username> \
 sudo config console-server user del <username>
 
 # Display
-show console-server running-config
-show console-server startup-config
+show console-server port
+show console-server group
+show console-server user
 show console-server sessions
 show console-server product-info
 
@@ -859,15 +860,16 @@ sudo config save
 
 | SONiC Command | console-cli Equivalent |
 |---|---|
-| `sudo config console-server user add <user> --password <pwd> [--role <role>] [--groups <groups>]` | `console-cli config user add {user} --password <pwd> [--role <role>] [--groups <groups>]` |
+| `sudo config console-server user add <user> [--password <pwd>] [--role <role>] [--groups <groups>]` | `console-cli config user add {user} --password <pwd> [--role <role>] [--groups <groups>]` |
 | `sudo config console-server user del <user>` | `console-cli config user delete {user}` |
 
 #### Display Commands
 
 | SONiC Command | console-cli Equivalent |
 |---|---|
-| `show console-server running-config` | `console-cli show running-config` |
-| `show console-server startup-config` | `console-cli show startup-config` |
+| `show console-server port` | `console-cli show running-config --line all` |
+| `show console-server group` | `console-cli show running-config --groups` |
+| `show console-server user` | `console-cli show running-config --users` |
 | `show console-server sessions` | `console-cli show sessions` |
 | `show console-server product-info` | `console-cli show product-info` |
 
@@ -912,7 +914,7 @@ sudo config console-server user del tech1
 
 The CLI may accept a friendly port range, but the shared config manager must convert it into normalized `CONSOLE_SERVER_GROUP_PORT` entries before writing ConfigDB.
 
-### 13.4 Show Command Examples
+### 13.5 Show Command Examples
 
 Recommended structure:
 
@@ -946,10 +948,39 @@ For example:
 ```text
 admin@sonic:~$ show console-server port
 
-Port  Label          Baudrate  Data  Parity  Stop  Flow  Mode    Max Clients  Idle Timeout
-----  -------------  --------  ----  ------  ----  ----  ------  -----------  ------------
-1     Router-01      9600      8     none    1     none  shared  4            600
-2     Switch-02      115200    8     none    1     none  single  1            0
+Port  Label          Baudrate  Data  Parity  Stop  Flow  Mode    Max Clients  Idle Timeout   tcp_port
+----  -------------  --------  ----  ------  ----  ----  ------  -----------  ------------   --------
+1     Router-01      9600      8     none    1     none  shared  4            600             35001
+2     Switch-02      115200    8     none    1     none  single  1            0               35002
+```
+
+```text
+admin@sonic:~$ show console-server group
+group          port_list                                                                              role
+-------------  -------------------------------------------------------------------------------------  ------------
+Group_Default  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24  console_user
+groupA         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15                                              admin
+groupB         13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24                                             admin
+```
+
+```text
+admin@sonic:~$ show console-server user
+user   group          role
+-----  -------------  --------
+admin  Group_Default  admin
+bmc    Group_Default  admin
+bob    groupA         none
+ted    groupB         operator
+```
+
+```text
+admin@sonic:~$ show console-server product-info
+Product Configuration & Limits
+------------------------------
+Base Port        : 35000
+Max Groups       : 16
+Max Ports        : 24
+Max Users        : 16
 ```
 
 And separately:
@@ -957,12 +988,14 @@ And separately:
 ```text
 admin@sonic:~$ show console-server sessions
 
-Session  Port  User   Source IP       Mode    Connected Since      Idle
--------  ----  -----  --------------  ------  -------------------  -----
-12       1     tech1  192.168.1.20    shared  2026-06-17 10:32:15  00:01:22
+- line 1 [exclusive] : writer=ted (clients=3, writers=1, observers=2)
+    - ted role=writer session_id=5f2a3b7c ip=127.0.0.1 port=40262 [timeout=600s, left=455s]
+    - ted role=observer session_id=8c9d1204 ip=127.0.0.1 port=60854 [timeout=600s, left=502s]
+    - alice role=observer session_id=2f01aa91 ip=127.0.0.1 port=48464 [timeout=600s, left=577s]
+- line 2 [shared] : writer=n/a (clients=0, writers=0, observers=0)
 ```
 
-### 13.5 Connect Command
+### 13.6 Connect Command
 
 Use:
 
@@ -990,7 +1023,7 @@ Fallback, only if integration requires it:
 connect console-server <port_number>
 ```
 
-### 13.6 Save Command
+### 13.7 Save Command
 
 Do not add:
 
@@ -1004,7 +1037,7 @@ Use the standard SONiC command:
 sudo config save
 ```
 
-### 13.7 Shared Implementation
+### 13.8 Shared Implementation
 
 The SONiC CLI and REST API should call the same shared config manager:
 
