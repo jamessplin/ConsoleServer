@@ -1,4 +1,4 @@
-# Console Server ConfigDB / YANG / CVL Implementation Note
+# Console Server ConfigDB / YANG / CVL Design Note
 
 ## 1. Purpose
 
@@ -13,6 +13,18 @@ The goal is to provide a clear direction for:
 - Runtime-only data handling
 
 This note is based on the current `cli_manual.md` and the design discussion.
+
+
+
+## 1.1 Related Implementation Documents
+
+Detailed Linux/NSS/PAM user-management behavior is defined in:
+
+```text
+console_server_user_management_implementation.md
+```
+
+This design note defines the data model, interfaces, validation ownership, and component boundaries. The linked implementation guide defines Linux account operations, transactions, rollback behavior, security requirements, and tests.
 
 ---
 
@@ -43,7 +55,7 @@ The CLI manual defines the following major command groups:
 | 3 | Should `ports` be `"all"` / `"1-5,8"` string or normalized entries? | Use normalized relationship entries. CLI/API may accept friendly syntax, but ConfigDB should store expanded entries. |
 | 4 | Should port key range be fixed to `1..24` or generic `1..256`? | Use generic YANG validation and platform-specific validation in the shared config manager. Use `leafref` where possible. |
 | 5 | Should `label` be unique? | Yes. Labels must be unique across console server ports. |
-| 6 | Should users really be in ConfigDB? | No. User account data should not be stored in ConfigDB. Password must not be stored in ConfigDB/YANG. |
+| 6 | Should users really be in ConfigDB? | Store only non-secret console-server user metadata (`username`, `role`, and normalized group membership) in ConfigDB. Linux account data and passwords are not stored in ConfigDB. Password is accepted only as a CLI/REST operation input and is written directly to the Linux authentication backend. |
 | 7 | What are runtime-only fields? | The output of `show sessions` is runtime-only data and should not be stored in ConfigDB. |
 
 ---
@@ -52,7 +64,7 @@ The CLI manual defines the following major command groups:
 
 ### 4.1 Writable ConfigDB Tables
 
-The initial writable ConfigDB model should focus on serial port settings and group-to-port mapping.
+The writable ConfigDB model includes serial port settings, groups, group-to-port mappings, and non-secret console-server user metadata. Passwords and Linux authentication data remain outside ConfigDB.
 
 ```json
 {
@@ -103,6 +115,21 @@ The initial writable ConfigDB model should focus on serial port settings and gro
         "Group_C|10": {},
         "Group_C|11": {},
         "Group_C|12": {}
+    },
+
+    "CONSOLE_SERVER_USER": {
+        "tech1": {
+            "role": "operator"
+        },
+        "guest": {
+            "role": "none"
+        }
+    },
+
+    "CONSOLE_SERVER_USER_GROUP": {
+        "tech1|Group_A": {},
+        "tech1|Group_B": {},
+        "guest|Group_Default": {}
     }
 }
 ```
@@ -114,7 +141,7 @@ Do not store the following in ConfigDB:
 | Data | Reason |
 |---|---|
 | Product info such as `base_port`, `max_ports`, `max_users`, `max_groups` | Read-only platform/deployment data |
-| User password | Security-sensitive; should be handled by local Linux account or authentication backend |
+| Linux account data and user password | Security-sensitive; handled by the Linux authentication backend. Password is accepted only as an operation input and is never stored in ConfigDB. |
 | Active sessions | Runtime state only |
 | Session ID | Runtime state only |
 | Writer / observer state | Runtime state only |
@@ -127,26 +154,22 @@ Do not store the following in ConfigDB:
 
 ### 5.1 Group Membership: Item 2
 
-The original CLI may accept:
+The CLI may accept:
 
 ```bash
-console-cli config user add tech1 --role operator --groups Group_A,Group_B
+console-cli config user add tech1 --role operator --groups Group_A,Group_B --password <password>
 ```
 
-However, since users should not be stored in ConfigDB, the final user/group storage depends on the authentication backend.
-
-If group membership is ever modeled in ConfigDB or another validated database, avoid storing it as:
+Store only non-secret user metadata in ConfigDB:
 
 ```json
 {
-    "groups": "Group_A,Group_B"
-}
-```
+    "CONSOLE_SERVER_USER": {
+        "tech1": {
+            "role": "operator"
+        }
+    },
 
-Prefer normalized relationship entries:
-
-```json
-{
     "CONSOLE_SERVER_USER_GROUP": {
         "tech1|Group_A": {},
         "tech1|Group_B": {}
@@ -154,7 +177,9 @@ Prefer normalized relationship entries:
 }
 ```
 
-This follows the same concept as VLAN member mapping:
+The password is not written to ConfigDB. It is accepted only by the CLI/REST user-management operation and is written directly to the Linux authentication backend.
+
+This follows the same normalized relationship concept as VLAN member mapping:
 
 ```json
 {
@@ -166,7 +191,7 @@ This follows the same concept as VLAN member mapping:
 }
 ```
 
-The key contains the relationship. The value can be empty if the relationship has no extra attributes.
+The composite key contains the relationship. The value can be empty if the relationship has no extra attributes.
 
 ### 5.2 Group Port Mapping: Item 3
 
@@ -250,8 +275,12 @@ The shared config manager should own:
 | Validate platform-specific `max_ports` | Shared config manager |
 | Convert friendly CLI/API input to normalized ConfigDB entries | Shared config manager |
 | Convert normalized ConfigDB entries back to show output | Shared config manager |
-| Enforce label uniqueness | Shared config manager |
+| Normalize missing or blank labels to `COM<port>` | Shared config manager |
+| Enforce reserved `COM<port>` ownership and label uniqueness after normalization | Shared config manager |
 | Write ConfigDB entries | Shared config manager |
+| Validate local Linux user existence | Shared config manager / user-management backend |
+| Create/delete Linux user and set password | Linux user-management backend |
+| Persist non-secret user role/group metadata | Shared config manager |
 
 ### 6.3 CVL / YANG
 
@@ -266,8 +295,9 @@ CVL should validate what can be expressed by YANG:
 | Leafref existence | Yes |
 | Generic port range such as `1..256` | Yes |
 | Relationship table key existence | Yes, through `leafref` |
+| Linux user existence | No; validate through the shared manager/user-management backend |
 | Platform-specific `max_ports` | No, handled by shared config manager |
-| Label uniqueness | Prefer shared config manager; may require additional custom validation if enforced at database level |
+| Label uniqueness | Yes, through `unique "label"`; shared manager also checks early for clearer errors |
 
 ### 6.4 seriald Runtime Backend
 
@@ -407,8 +437,12 @@ module sonic-console-server {
                     type string {
                         length "1..16";
                     }
+                    mandatory true;
                     description
-                        "Unique user-friendly serial line label.";
+                        "Unique user-friendly serial line label. The shared "
+                      + "config manager generates COM<port> when a new port "
+                      + "has no label or when a blank label is explicitly "
+                      + "provided.";
                 }
             }
         }
@@ -506,12 +540,93 @@ The skeleton in Section 7.1 contains several non-obvious modeling choices. The t
 |---|---|
 | `baudrate` as `uint32` with a discrete allowed-value range, not `enumeration` | YANG `enumeration` assigns string identity names to each value. A `uint32` range with discrete values (`300 \| 1200 \| ...`) keeps the leaf numeric and machine-comparable, which aligns with how SONiC models similar integer-valued constraints. |
 | `unique "label"` on the list, not a `must` expression | `unique` is the YANG 1.1 idiomatic statement for enforcing non-key leaf uniqueness across list entries. A `must` XPath over the full list is harder to maintain and less portable across CVL implementations. |
+| Dynamic default port label | YANG cannot express a default derived from another leaf, such as `COM<port>`. The shared config manager must normalize an omitted label for a new port, or an explicitly blank label, to `COM<port>` before CVL validation and ConfigDB write. The stored label is mandatory and non-empty. |
+| Reserved `COM<port>` labels | `COM1` through `COM<max_ports>` are reserved for their matching ports so every port can always be reset to its deterministic default. Reserved-name matching is case-insensitive, and reserved labels are stored canonically in uppercase. |
 | `leafref` for both keys of `CONSOLE_SERVER_GROUP_PORT_LIST` | Enforces referential integrity at the CVL level. A group-port mapping entry for a non-existent group or port is rejected at write time, preventing orphan entries. |
 | `idle_timeout` range `0..86400` with `0` meaning disabled | Avoids a separate boolean flag. `0` is the conventional sentinel for "no timeout" across SONiC models. `86400` seconds (24 hours) is the approved upper bound. |
 | No `CONSOLE_SERVER_GLOBAL` container | Product and platform info such as `base_port`, `max_ports`, `max_users`, and `max_groups` is read-only deployment metadata. It must not be modeled as writable ConfigDB data. |
-| No user or password leaf | Passwords must not be stored in ConfigDB. User role and group membership are managed outside YANG scope for this phase. Only `CONSOLE_SERVER_GROUP` and `CONSOLE_SERVER_GROUP_PORT` are in scope. |
+| User metadata without password leaf | `CONSOLE_SERVER_USER` stores only non-secret metadata such as username and role. `CONSOLE_SERVER_USER_GROUP` stores normalized membership. Password is never a ConfigDB leaf; it is accepted only as a CLI/REST operation input and is written to the Linux authentication backend. |
 
 ---
+
+
+The `CONSOLE_SERVER_USER_GROUP.username` leafref validates only ConfigDB referential integrity. It does not prove that the corresponding Linux/NSS account exists. Before writing or updating `CONSOLE_SERVER_USER` or `CONSOLE_SERVER_USER_GROUP`, the shared manager must validate the account through the configured Linux/NSS authentication backend.
+
+Implementation details are defined in `console_server_user_management_implementation.md`.
+
+
+### 7.2.1 Password Operation Input
+
+Standard YANG does not provide a general write-only configuration leaf. Therefore, `password` must not be added to `CONSOLE_SERVER_USER`.
+
+Model password only as an operation input, for example through a YANG `rpc` or `action` if the selected SONiC REST stack supports it:
+
+```yang
+rpc console-server-user-add {
+    input {
+        leaf username {
+            type string {
+                length "1..32";
+                pattern '[A-Za-z_][A-Za-z0-9_-]*';
+            }
+            mandatory true;
+        }
+
+        leaf password {
+            type string {
+                length "1..128";
+            }
+            mandatory true;
+        }
+
+        leaf role {
+            type enumeration {
+                enum none;
+                enum operator;
+                enum console_user;
+                enum admin;
+            }
+            default "none";
+        }
+
+        leaf-list groups {
+            type leafref {
+                path "/cs:sonic-console-server/cs:CONSOLE_SERVER_GROUP/cs:CONSOLE_SERVER_GROUP_LIST/cs:groupname";
+            }
+        }
+    }
+}
+
+rpc console-server-user-password-set {
+    input {
+        leaf username {
+            type string {
+                length "1..32";
+                pattern '[A-Za-z_][A-Za-z0-9_-]*';
+            }
+            mandatory true;
+        }
+
+        leaf password {
+            type string {
+                length "1..128";
+            }
+            mandatory true;
+        }
+    }
+}
+```
+
+Required behavior:
+
+```text
+username / role / groups -> ConfigDB non-secret metadata
+password                 -> Linux authentication backend only
+```
+
+The password must never be stored in ConfigDB, returned by REST GET/show commands, printed in logs, or included in error messages.
+
+If the selected SONiC REST framework does not support arbitrary YANG `rpc` or `action` nodes, implement a dedicated REST operation endpoint with the same storage and security rules.
 
 ### 7.3 `pyang` Acceptance Gate
 
@@ -557,11 +672,35 @@ File SHA-256:
 Do not mark Section 7 implementation-ready until the exact accepted file content, `pyang` version, validation result, and SHA-256 are recorded.
 
 
-## 8. Label Uniqueness
+## 8. Label Defaulting and Uniqueness
 
-Decision: console port labels must be unique.
+Decision: every stored console port entry must contain a non-empty, unique label.
 
-The YANG list should enforce uniqueness directly:
+Default and reset rules:
+
+```text
+New port, label omitted:
+    store COM<port>
+
+New port, label blank:
+    store COM<port>
+
+Existing port, label option omitted:
+    preserve the current label
+
+Existing port, label explicitly blank:
+    reset the label to COM<port>
+```
+
+YANG cannot express the dynamic default `COM<port>`, so the shared config manager must perform this normalization before CVL validation and ConfigDB write.
+
+Example:
+
+```text
+port 5 + missing/blank label -> COM5
+```
+
+The YANG list should enforce uniqueness directly, and the `label` leaf must be mandatory because every stored port entry has a normalized non-empty label:
 
 ```yang
 list CONSOLE_SERVER_PORT_LIST {
@@ -591,18 +730,100 @@ Validation should be performed at two levels:
 | Shared config manager | Detect duplicates early and return a clear interface-specific error |
 | YANG/CVL | Final schema-level enforcement through `unique "label"` |
 
-### 8.1 Error Contract
+
+### 8.1 Label Normalization
+
+The shared config manager should expose:
+
+```python
+def normalize_port_label(port: int, label: str | None) -> str:
+    """Return COM<port> when label is missing or blank."""
+```
+
+Required behavior:
+
+```python
+def normalize_port_label(port: int, label: str | None) -> str:
+    if label is None or not label.strip():
+        return f"COM{port}"
+    return label
+```
+
+Reserved default labels must be validated before the general uniqueness check.
+
+Labels in the form `COM<port>` are reserved default labels. A reserved label may only be assigned to its corresponding console port. Matching is case-insensitive.
+
+Examples:
+
+```text
+port 5, blank label  -> normalize to COM5 and accept
+port 5, COM5         -> accept
+port 5, com5         -> normalize/canonicalize to COM5 and accept
+port 2, COM5         -> reject; COM5 is reserved for port 5
+port 2, com5         -> reject; COM5 is reserved for port 5
+```
+
+Recommended error:
+
+```text
+Error: Label 'COM5' is reserved for console port 5.
+```
+
+The shared manager must not automatically rename an existing label or generate an alternative such as `COM5-1`. The request must be rejected so the user can choose a valid custom label.
+
+After reserved-name validation, the normalized label must also pass the general uniqueness check.
+
+
+The shared config manager should also expose:
+
+```python
+def validate_reserved_port_label(port: int, label: str, max_ports: int) -> None:
+    """Reject COM<M> when M is a valid port number different from port."""
+```
+
+Recommended behavior:
+
+```python
+import re
+
+_RESERVED_LABEL_RE = re.compile(r"^COM([0-9]+)$", re.IGNORECASE)
+
+
+def validate_reserved_port_label(
+    port: int,
+    label: str,
+    max_ports: int,
+) -> None:
+    match = _RESERVED_LABEL_RE.fullmatch(label.strip())
+    if not match:
+        return
+
+    reserved_port = int(match.group(1))
+    if 1 <= reserved_port <= max_ports and reserved_port != port:
+        raise ReservedPortLabelError(
+            f"Label 'COM{reserved_port}' is reserved for console port "
+            f"{reserved_port}."
+        )
+```
+
+Canonical storage should use uppercase `COM<port>` for reserved default labels.
+
+### 8.2 Error Contract
 
 Use the following fixed error contract:
 
-| Interface | Result |
+| Condition | CLI result | REST result |
+|---|---|---|
+| Duplicate custom or normalized label | Exit code `1`; error code `CONSOLE_SERVER_LABEL_DUPLICATE` | `409 Conflict`; error code `CONSOLE_SERVER_LABEL_DUPLICATE` |
+| Reserved default label assigned to the wrong port | Exit code `1`; error code `CONSOLE_SERVER_LABEL_RESERVED` | `409 Conflict`; error code `CONSOLE_SERVER_LABEL_RESERVED` |
+
+Common fields:
+
+| Field | Value |
 |---|---|
-| CLI exit code | `1` |
-| CLI error code | `CONSOLE_SERVER_LABEL_DUPLICATE` |
-| REST HTTP status | `409 Conflict` |
-| REST error code | `CONSOLE_SERVER_LABEL_DUPLICATE` |
 | Error field | `label` |
-| Message format | `Console port label '<label>' is already used by port <port>.` |
+| Duplicate-label message | `Console port label '<label>' is already used by port <port>.` |
+| Reserved-label message | `Label '<label>' is reserved for console port <port>.` |
 
 CLI example:
 
@@ -617,6 +838,25 @@ REST example:
     "error": {
         "code": "CONSOLE_SERVER_LABEL_DUPLICATE",
         "message": "Console port label 'BackupConsole' is already used by port 1.",
+        "field": "label"
+    }
+}
+```
+
+
+Reserved-label CLI example:
+
+```text
+Error: Label 'COM5' is reserved for console port 5.
+```
+
+Reserved-label REST example:
+
+```json
+{
+    "error": {
+        "code": "CONSOLE_SERVER_LABEL_RESERVED",
+        "message": "Label 'COM5' is reserved for console port 5.",
         "field": "label"
     }
 }
@@ -718,6 +958,13 @@ leaf idle_timeout {
 - [ ] Use single-line `leafref` paths
 - [ ] Model `baudrate` as restricted `uint32`
 - [ ] Add `unique "label"` to `CONSOLE_SERVER_PORT_LIST`
+- [ ] Make `label` mandatory in the stored YANG model
+- [ ] Normalize a missing new-port label to `COM<port>`
+- [ ] Treat an explicitly blank existing-port label as reset to `COM<port>`
+- [ ] Validate uniqueness after label normalization
+- [ ] Reserve `COM1..COM<max_ports>` for their matching ports
+- [ ] Match reserved labels case-insensitively
+- [ ] Store reserved default labels canonically as uppercase `COM<port>`
 - [x] Set the supported `idle_timeout` range to `0..86400`
 - [ ] Validate the final YANG with `pyang`
 - [ ] Record the accepted `pyang` version and file SHA-256
@@ -725,7 +972,10 @@ leaf idle_timeout {
 - [ ] Add `CONSOLE_SERVER_GROUP`
 - [ ] Add `CONSOLE_SERVER_GROUP_PORT`
 - [ ] Do not add writable `CONSOLE_SERVER_GLOBAL`
-- [ ] Do not add users/passwords to ConfigDB YANG
+- [ ] Add `CONSOLE_SERVER_USER` for non-secret username/role metadata
+- [ ] Add `CONSOLE_SERVER_USER_GROUP` for normalized membership
+- [ ] Do not add `password` as a ConfigDB leaf
+- [ ] Define password only as a CLI/REST operation input
 - [ ] Add file to `setup.py` `yang_files`
 - [ ] Run `pyang`
 - [ ] Build `sonic-yang-models`
@@ -738,8 +988,12 @@ leaf idle_timeout {
 - [ ] Implement platform port validation
 - [ ] Implement ConfigDB writer for normalized `CONSOLE_SERVER_GROUP_PORT`
 - [ ] Implement reverse conversion for show commands
-- [ ] Implement label uniqueness check
+- [ ] Implement `normalize_port_label(port, label)`
+- [ ] Implement reserved-label ownership validation
+- [ ] Implement label uniqueness check after normalization
 - [ ] Share the same manager between CLI and REST API
+- [ ] Validate Linux user existence through the user-management backend
+- [ ] Persist only non-secret user metadata to ConfigDB
 
 ### 11.3 CLI
 
@@ -771,16 +1025,19 @@ Start with:
 CONSOLE_SERVER_PORT
 CONSOLE_SERVER_GROUP
 CONSOLE_SERVER_GROUP_PORT
+CONSOLE_SERVER_USER
+CONSOLE_SERVER_USER_GROUP
 ```
 
-Defer:
+Do not implement:
 
 ```text
-User storage in ConfigDB
 Password storage in ConfigDB
 Writable global/product-info table
 Runtime session state in ConfigDB
 ```
+
+User role and group membership are in scope as non-secret ConfigDB metadata. Linux account creation and password handling remain in the Linux authentication backend.
 
 This keeps the first YANG/CVL implementation focused and avoids security-sensitive or runtime-only data.
 
@@ -1094,6 +1351,22 @@ REST API ──┘          │
 ```
 
 This prevents the CLI and REST API from applying different conversion or validation rules.
+
+Minimum user-management contract:
+
+```python
+def validate_local_user_exists(username: str) -> None:
+    """Validate the username against the configured Linux/NSS backend."""
+```
+
+The shared manager must also support user creation, password update, deletion, non-secret metadata updates, and rollback across Linux account state and ConfigDB.
+
+Detailed API definitions and transaction behavior are specified in:
+
+```text
+console_server_user_management_implementation.md
+```
+
 
 ---
 
