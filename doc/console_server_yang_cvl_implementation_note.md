@@ -451,6 +451,47 @@ module sonic-console-server {
                 }
             }
         }
+
+        container CONSOLE_SERVER_USER {
+            list CONSOLE_SERVER_USER_LIST {
+                key "username";
+
+                leaf username {
+                    type string {
+                        length "1..32";
+                        pattern '[A-Za-z_][A-Za-z0-9_-]*';
+                    }
+                }
+
+                leaf role {
+                    type enumeration {
+                        enum none;
+                        enum operator;
+                        enum console_user;
+                        enum admin;
+                    }
+                    default "none";
+                }
+            }
+        }
+
+        container CONSOLE_SERVER_USER_GROUP {
+            list CONSOLE_SERVER_USER_GROUP_LIST {
+                key "username groupname";
+
+                leaf username {
+                    type leafref {
+                        path "/cs:sonic-console-server/cs:CONSOLE_SERVER_USER/cs:CONSOLE_SERVER_USER_LIST/cs:username";
+                    }
+                }
+
+                leaf groupname {
+                    type leafref {
+                        path "/cs:sonic-console-server/cs:CONSOLE_SERVER_GROUP/cs:CONSOLE_SERVER_GROUP_LIST/cs:groupname";
+                    }
+                }
+            }
+        }
     }
 }
 ```
