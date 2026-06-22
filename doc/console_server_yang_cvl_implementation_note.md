@@ -550,7 +550,7 @@ The skeleton in Section 7.1 contains several non-obvious modeling choices. The t
 ---
 
 
-The `CONSOLE_SERVER_USER_GROUP.username` leafref validates only ConfigDB referential integrity. It does not prove that the corresponding Linux/NSS account exists. Before writing or updating `CONSOLE_SERVER_USER` or `CONSOLE_SERVER_USER_GROUP`, the shared manager must validate the account through the configured Linux/NSS authentication backend.
+The `CONSOLE_SERVER_USER_GROUP.username` leafref validates only ConfigDB referential integrity. It does not prove that the corresponding Linux/NSS account exists. For an existing user, the shared manager must validate that the account exists in the configured Linux/NSS authentication backend before updating ConfigDB metadata. For a new user, the Linux account must be created successfully before `CONSOLE_SERVER_USER` and `CONSOLE_SERVER_USER_GROUP` are committed.
 
 Implementation details are defined in `console_server_user_management_implementation.md`.
 
