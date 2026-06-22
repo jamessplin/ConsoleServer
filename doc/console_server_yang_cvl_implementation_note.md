@@ -1226,6 +1226,23 @@ Shows runtime session status only, such as connected users, source addresses, po
 - `show console-server product-info`
 Shows hardware or product information.
 
+
+`tcp_port` is a derived runtime/display value and is not stored as an independent ConfigDB field.
+
+```text
+tcp_port = base_port + serial_port
+```
+
+Example:
+
+```text
+base_port = 35000
+serial_port = 1
+tcp_port = 35001
+```
+
+The `base_port` value comes from read-only product/platform information.
+
 For example:
 
 ```text
