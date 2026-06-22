@@ -828,65 +828,7 @@ connect line <port_number>
 sudo config save
 ```
 
-### 13.3 Command Mapping: SONiC vs console-cli
-
-#### Serial Port Configuration
-
-| SONiC Command | console-cli Equivalent |
-|---|---|
-| `sudo config console-server port baudrate <port> <rate>` | `console-cli config port {port} --baudrate <rate>` |
-| `sudo config console-server port databits <port> <bits>` | `console-cli config port {port} --databits <bits>` |
-| `sudo config console-server port parity <port> <parity>` | `console-cli config port {port} --parity <type>` |
-| `sudo config console-server port stopbits <port> <bits>` | `console-cli config port {port} --stopbits <bits>` |
-| `sudo config console-server port flowcontrol <port> <mode>` | `console-cli config port {port} --flowcontrol <method>` |
-
-#### Operational Configuration
-
-| SONiC Command | console-cli Equivalent |
-|---|---|
-| `sudo config console-server port mode <port> <mode>` | `console-cli config operation {port} --mode <mode>` |
-| `sudo config console-server port max-clients <port> <count>` | `console-cli config operation {port} --max-clients <count>` |
-| `sudo config console-server port idle-timeout <port> <seconds>` | `console-cli config operation {port} --idle-timeout <seconds>` |
-| `sudo config console-server port label <port> <label>` | `console-cli config operation {port} --label <label>` |
-
-#### Group Management
-
-| SONiC Command | console-cli Equivalent |
-|---|---|
-| `sudo config console-server group add <name> --role <role> --ports <list>` | `console-cli config group add {name} --role <role> --ports <list>` |
-| `sudo config console-server group del <name>` | `console-cli config group delete {name}` |
-
-#### User Management
-
-| SONiC Command | console-cli Equivalent |
-|---|---|
-| `sudo config console-server user add <user> [--password <pwd>] [--role <role>] [--groups <groups>]` | `console-cli config user add {user} --password <pwd> [--role <role>] [--groups <groups>]` |
-| `sudo config console-server user del <user>` | `console-cli config user delete {user}` |
-
-#### Display Commands
-
-| SONiC Command | console-cli Equivalent |
-|---|---|
-| `show console-server port` | `console-cli show running-config --line all` |
-| `show console-server group` | `console-cli show running-config --groups` |
-| `show console-server user` | `console-cli show running-config --users` |
-| `show console-server sessions` | `console-cli show sessions` |
-| `show console-server product-info` | `console-cli show product-info` |
-
-#### Connection
-
-| SONiC Command | console-cli Equivalent |
-|---|---|
-| `connect line <port>` | `console-cli connect {port}` |
-
-**Key Differences:**
-- SONiC uses **action-then-value** syntax: `port baudrate <port> <rate>` (splits port config into individual property subcommands)
-- console-cli uses **unified option syntax**: `config port {port} --baudrate <rate>` (all serial settings on one command)
-- SONiC splits port behavior into `port` (serial) and `operation` (behavioral); console-cli groups as `port` and `operation` commands
-- SONiC requires `sudo` prefix; console-cli invokes directly
-- Verb forms: SONiC uses short forms (`del`); console-cli uses `delete`
-
-### 13.4 Configuration Examples
+### 13.3 Configuration Examples
 
 ```bash
 sudo config console-server port baudrate 5 115200
@@ -914,7 +856,7 @@ sudo config console-server user del tech1
 
 The CLI may accept a friendly port range, but the shared config manager must convert it into normalized `CONSOLE_SERVER_GROUP_PORT` entries before writing ConfigDB.
 
-### 13.5 Show Command Examples
+### 13.4 Show Command Examples
 
 Recommended structure:
 
@@ -995,7 +937,7 @@ admin@sonic:~$ show console-server sessions
 - line 2 [shared] : writer=n/a (clients=0, writers=0, observers=0)
 ```
 
-### 13.6 Connect Command
+### 13.5 Connect Command
 
 Use:
 
@@ -1023,7 +965,7 @@ Fallback, only if integration requires it:
 connect console-server <port_number>
 ```
 
-### 13.7 Save Command
+### 13.6 Save Command
 
 Do not add:
 
@@ -1036,6 +978,64 @@ Use the standard SONiC command:
 ```bash
 sudo config save
 ```
+
+### 13.7 Command Mapping: SONiC vs console-cli
+
+#### Serial Port Configuration
+
+| SONiC Command | console-cli Equivalent |
+|---|---|
+| `sudo config console-server port baudrate <port> <rate>` | `console-cli config port {port} --baudrate <rate>` |
+| `sudo config console-server port databits <port> <bits>` | `console-cli config port {port} --databits <bits>` |
+| `sudo config console-server port parity <port> <parity>` | `console-cli config port {port} --parity <type>` |
+| `sudo config console-server port stopbits <port> <bits>` | `console-cli config port {port} --stopbits <bits>` |
+| `sudo config console-server port flowcontrol <port> <mode>` | `console-cli config port {port} --flowcontrol <method>` |
+
+#### Operational Configuration
+
+| SONiC Command | console-cli Equivalent |
+|---|---|
+| `sudo config console-server port mode <port> <mode>` | `console-cli config operation {port} --mode <mode>` |
+| `sudo config console-server port max-clients <port> <count>` | `console-cli config operation {port} --max-clients <count>` |
+| `sudo config console-server port idle-timeout <port> <seconds>` | `console-cli config operation {port} --idle-timeout <seconds>` |
+| `sudo config console-server port label <port> <label>` | `console-cli config operation {port} --label <label>` |
+
+#### Group Management
+
+| SONiC Command | console-cli Equivalent |
+|---|---|
+| `sudo config console-server group add <name> --role <role> --ports <list>` | `console-cli config group add {name} --role <role> --ports <list>` |
+| `sudo config console-server group del <name>` | `console-cli config group delete {name}` |
+
+#### User Management
+
+| SONiC Command | console-cli Equivalent |
+|---|---|
+| `sudo config console-server user add <user> [--password <pwd>] [--role <role>] [--groups <groups>]` | `console-cli config user add {user} --password <pwd> [--role <role>] [--groups <groups>]` |
+| `sudo config console-server user del <user>` | `console-cli config user delete {user}` |
+
+#### Display Commands
+
+| SONiC Command | console-cli Equivalent |
+|---|---|
+| `show console-server port` | `console-cli show running-config --line all` |
+| `show console-server group` | `console-cli show running-config --groups` |
+| `show console-server user` | `console-cli show running-config --users` |
+| `show console-server sessions` | `console-cli show sessions` |
+| `show console-server product-info` | `console-cli show product-info` |
+
+#### Connection
+
+| SONiC Command | console-cli Equivalent |
+|---|---|
+| `connect line <port>` | `console-cli connect {port}` |
+
+**Key Differences:**
+- SONiC uses **action-then-value** syntax: `port baudrate <port> <rate>` (splits port config into individual property subcommands)
+- console-cli uses **unified option syntax**: `config port {port} --baudrate <rate>` (all serial settings on one command)
+- SONiC splits port behavior into `port` (serial) and `operation` (behavioral); console-cli groups as `port` and `operation` commands
+- SONiC requires `sudo` prefix; console-cli invokes directly
+- Verb forms: SONiC uses short forms (`del`); console-cli uses `delete`
 
 ### 13.8 Shared Implementation
 
