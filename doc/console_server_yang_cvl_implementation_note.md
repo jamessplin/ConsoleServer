@@ -1104,7 +1104,9 @@ sudo config console-server group add <group_name> \
 sudo config console-server group del <group_name>
 
 # User configuration
-# New user: `--password` is required.
+# The same command supports both create and update.
+# For a new Linux user, `--password` is required.
+# For an existing Linux user, `--password` is optional; when omitted, the existing password is unchanged.
 sudo config console-server user add <username> \
     [--password <password>] \
     [--role <role>] \
@@ -1309,8 +1311,24 @@ sudo config save
 
 | SONiC Command | console-cli Equivalent |
 |---|---|
-| `sudo config console-server user add <user> [--password <pwd>] [--role <role>] [--groups <groups>]` | `console-cli config user add {user} --password <pwd> [--role <role>] [--groups <groups>]` |
+| `sudo config console-server user add <user> [--password <pwd>] [--role <role>] [--groups <groups>]` | `console-cli config user add {user} [--password <pwd>] [--role <role>] [--groups <groups>]` |
 | `sudo config console-server user del <user>` | `console-cli config user delete {user}` |
+
+
+Password handling for both SONiC CLI and `console-cli`:
+
+```text
+New Linux user:
+    --password is required.
+
+Existing Linux user:
+    --password is optional.
+    If omitted, the existing password remains unchanged.
+
+Existing Linux user without CONSOLE_SERVER_USER metadata:
+    treat the command as an import/update operation;
+    create the missing ConfigDB metadata without recreating the Linux account.
+```
 
 #### Display Commands
 
@@ -1415,6 +1433,36 @@ def validate_reserved_port_label(
     """Reject COM<M> when M is a valid port number different from port."""
 ```
 
+
+```python
+def set_user_config(
+    username: str,
+    password: str | None,
+    role: str | None,
+    groups: list[str] | None,
+) -> None:
+    """Create or update a console-server user and its non-secret metadata."""
+```
+
+Required behavior:
+
+```text
+Linux user does not exist, password missing:
+    reject with CONSOLE_SERVER_PASSWORD_REQUIRED
+
+Linux user does not exist, password supplied:
+    create the Linux account and write non-secret ConfigDB metadata
+
+Linux user exists, password omitted:
+    keep the existing password unchanged and update supplied metadata
+
+Linux user exists, password supplied:
+    update the password and supplied metadata
+
+Linux user exists but CONSOLE_SERVER_USER metadata is missing:
+    create/import the missing ConfigDB metadata without recreating the Linux account
+```
+
 The CLI and REST layers must not duplicate these parsing, normalization, validation, or transaction rules.
 
 Minimum user-management contract:
@@ -1436,6 +1484,29 @@ console_server_user_management_implementation.md
 ---
 
 ---
+
+
+Password-required error contract:
+
+| Field | Value |
+|---|---|
+| CLI exit code | `1` |
+| Error code | `CONSOLE_SERVER_PASSWORD_REQUIRED` |
+| REST status | `400 Bad Request` |
+| Error field | `password` |
+| Message | `Password is required when creating a new user.` |
+
+REST example:
+
+```json
+{
+    "error": {
+        "code": "CONSOLE_SERVER_PASSWORD_REQUIRED",
+        "message": "Password is required when creating a new user.",
+        "field": "password"
+    }
+}
+```
 
 ## 14. Operational Command Integration
 

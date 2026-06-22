@@ -212,6 +212,26 @@ def remove_user(username: str) -> None:
     """Remove ConfigDB metadata and delete the Linux account."""
 ```
 
+
+High-level `add_user` / `update_user` behavior:
+
+```text
+Linux user absent + password absent:
+    reject with CONSOLE_SERVER_PASSWORD_REQUIRED
+
+Linux user absent + password present:
+    create Linux account and ConfigDB metadata
+
+Linux user present + password absent:
+    leave password unchanged; update supplied metadata
+
+Linux user present + password present:
+    update password and supplied metadata
+
+Linux user present + ConfigDB metadata absent:
+    import/create the missing metadata without recreating the Linux account
+```
+
 ---
 
 ## 5. REST/YANG Operation Inputs
@@ -299,7 +319,29 @@ Required flow:
 8. Return success.
 ```
 
-For an existing-user update, password is optional.
+For an existing-user update, password is optional. If omitted, the existing password remains unchanged.
+
+
+### 6.2.1 Existing Linux User Without ConfigDB Metadata
+
+If the Linux/NSS user already exists but `CONSOLE_SERVER_USER` metadata is missing, treat `user add` as an import/update operation.
+
+Required flow:
+
+```text
+1. Validate username syntax.
+2. Confirm the Linux/NSS user exists.
+3. Do not recreate the Linux account.
+4. Validate supplied groups.
+5. Update the password only if one is supplied.
+6. Create the missing CONSOLE_SERVER_USER metadata.
+7. Create normalized CONSOLE_SERVER_USER_GROUP mappings.
+8. Run CVL/schema validation.
+9. Commit ConfigDB metadata transactionally.
+10. Return success.
+```
+
+This behavior allows pre-existing SONiC/Linux users to be enrolled in console-server authorization without duplicate account creation.
 
 ### 6.3 Delete User
 
