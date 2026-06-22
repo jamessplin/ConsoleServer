@@ -1191,7 +1191,7 @@ admin@sonic:~$ show console-server port
 Port  Label          Baudrate  Data  Parity  Stop  Flow  Mode    Max Clients  Idle Timeout   tcp_port
 ----  -------------  --------  ----  ------  ----  ----  ------  -----------  ------------   --------
 1     Router-01      9600      8     none    1     none  shared  4            600             35001
-2     Switch-02      115200    8     none    1     none  single  1            0               35002
+2     Switch-02      115200    8     none    1     none  exclusive  1         0               35002
 ```
 
 ```text
@@ -1319,7 +1319,7 @@ sudo config save
 | `show console-server port` | `console-cli show running-config --line all` |
 | `show console-server group` | `console-cli show running-config --groups` |
 | `show console-server user` | `console-cli show running-config --users` |
-| `show console-server sessions` | `console-cli show sessions` |
+| `show console-server sessions` | `console-cli show sessions --json` |
 | `show console-server product-info` | `console-cli show product-info` |
 
 #### Connection
@@ -1331,7 +1331,7 @@ sudo config save
 **Key Differences:**
 - SONiC uses **action-then-value** syntax: `port baudrate <port> <rate>` (splits port config into individual property subcommands)
 - console-cli uses **unified option syntax**: `config port {port} --baudrate <rate>` (all serial settings on one command)
-- SONiC splits port behavior into `port` (serial) and `operation` (behavioral); console-cli groups as `port` and `operation` commands
+- SONiC exposes each property as an individual subcommand under `console-server port`; `console-cli` separates physical settings and operational settings into `config port` and `config operation`.
 - SONiC requires `sudo` prefix; console-cli invokes directly
 - Verb forms: SONiC uses short forms (`del`); console-cli uses `delete`
 
@@ -1351,6 +1351,71 @@ REST API ──┘          │
 ```
 
 This prevents the CLI and REST API from applying different conversion or validation rules.
+
+### 13.8.1 Minimum Shared-Manager API
+
+The shared config manager should expose at least the following implementation-level APIs:
+
+```python
+def parse_port_expression(expression: str) -> list[int]:
+    """Parse values such as 'all', '1-5,8', or '1,3,7-9' into explicit ports."""
+```
+
+```python
+def validate_ports(ports: list[int], max_ports: int) -> None:
+    """Validate uniqueness, generic syntax, and the platform-specific port limit."""
+```
+
+```python
+def normalize_group_ports(
+    group_name: str,
+    ports: list[int],
+) -> dict:
+    """Convert explicit ports into normalized CONSOLE_SERVER_GROUP_PORT entries."""
+```
+
+```python
+def validate_unique_label(port: int, label: str) -> None:
+    """Validate reserved-label ownership and uniqueness against all other ports."""
+```
+
+```python
+def validate_local_user_exists(username: str) -> None:
+    """Validate the username against the configured Linux/NSS backend."""
+```
+
+```python
+def set_port_config(port: int, updates: dict) -> None:
+    """Validate and apply one or more port configuration updates."""
+```
+
+```python
+def set_group_ports(group_name: str, expression: str) -> None:
+    """Parse, validate, normalize, and replace a group's complete port mapping."""
+```
+
+```python
+def write_transaction(operations: list) -> None:
+    """Run CVL/schema validation and commit all ConfigDB operations atomically."""
+```
+
+Additional label-specific helpers remain part of the same shared manager:
+
+```python
+def normalize_port_label(port: int, label: str | None) -> str:
+    """Return COM<port> when a new-port label is missing or a label is explicitly blank."""
+```
+
+```python
+def validate_reserved_port_label(
+    port: int,
+    label: str,
+    max_ports: int,
+) -> None:
+    """Reject COM<M> when M is a valid port number different from port."""
+```
+
+The CLI and REST layers must not duplicate these parsing, normalization, validation, or transaction rules.
 
 Minimum user-management contract:
 
