@@ -957,53 +957,90 @@ leaf idle_timeout {
 - [ ] Use `prefix cs`
 - [ ] Use single-line `leafref` paths
 - [ ] Model `baudrate` as restricted `uint32`
-- [ ] Add `unique "label"` to `CONSOLE_SERVER_PORT_LIST`
-- [ ] Make `label` mandatory in the stored YANG model
-- [ ] Normalize a missing new-port label to `COM<port>`
-- [ ] Treat an explicitly blank existing-port label as reset to `COM<port>`
-- [ ] Validate uniqueness after label normalization
-- [ ] Reserve `COM1..COM<max_ports>` for their matching ports
-- [ ] Match reserved labels case-insensitively
-- [ ] Store reserved default labels canonically as uppercase `COM<port>`
-- [x] Set the supported `idle_timeout` range to `0..86400`
-- [ ] Validate the final YANG with `pyang`
-- [ ] Record the accepted `pyang` version and file SHA-256
+- [ ] Set `idle_timeout` range to `0..86400`
 - [ ] Add `CONSOLE_SERVER_PORT`
 - [ ] Add `CONSOLE_SERVER_GROUP`
 - [ ] Add `CONSOLE_SERVER_GROUP_PORT`
-- [ ] Do not add writable `CONSOLE_SERVER_GLOBAL`
 - [ ] Add `CONSOLE_SERVER_USER` for non-secret username/role metadata
 - [ ] Add `CONSOLE_SERVER_USER_GROUP` for normalized membership
+- [ ] Do not add writable `CONSOLE_SERVER_GLOBAL`
 - [ ] Do not add `password` as a ConfigDB leaf
-- [ ] Define password only as a CLI/REST operation input
-- [ ] Add file to `setup.py` `yang_files`
-- [ ] Run `pyang`
+- [ ] Add `unique "label"` to `CONSOLE_SERVER_PORT_LIST`
+- [ ] Make `label` mandatory in the stored YANG model
+- [ ] Validate stored label type and length
+- [ ] Validate the final YANG with `pyang`
+- [ ] Record the accepted `pyang` version and file SHA-256
+- [ ] Add the file to `setup.py` `yang_files`
 - [ ] Build `sonic-yang-models`
-- [ ] Confirm generated/copied model appears under `cvlyang-models`
+- [ ] Confirm the generated/copied model appears under `cvlyang-models`
 
 ### 11.2 Shared Config Manager
 
-- [ ] Implement port range parser
-- [ ] Implement `all` expansion using platform `max_ports`
-- [ ] Implement platform port validation
-- [ ] Implement ConfigDB writer for normalized `CONSOLE_SERVER_GROUP_PORT`
-- [ ] Implement reverse conversion for show commands
+- [ ] Implement `parse_port_expression(expression)`
+- [ ] Implement `validate_ports(ports, max_ports)`
+- [ ] Implement `normalize_group_ports(group_name, ports)`
 - [ ] Implement `normalize_port_label(port, label)`
+- [ ] Normalize a missing new-port label to `COM<port>`
+- [ ] Treat an explicitly blank existing-port label as reset to `COM<port>`
+- [ ] Reserve `COM1..COM<max_ports>` for their matching ports
+- [ ] Match reserved labels case-insensitively
+- [ ] Store reserved default labels canonically as uppercase `COM<port>`
 - [ ] Implement reserved-label ownership validation
-- [ ] Implement label uniqueness check after normalization
-- [ ] Share the same manager between CLI and REST API
-- [ ] Validate Linux user existence through the user-management backend
+- [ ] Implement label uniqueness checking after normalization
+- [ ] Implement `set_port_config(port, updates)`
+- [ ] Implement `set_group_ports(group_name, expression)`
+- [ ] Implement `write_transaction(operations)`
+- [ ] Implement reverse conversion for show commands
+- [ ] Validate platform-specific `max_ports`
+- [ ] Validate Linux/NSS user existence for existing users
+- [ ] Require password only when creating a new Linux user
+- [ ] Keep the existing password unchanged when omitted for an existing user
+- [ ] Import an existing Linux user when ConfigDB metadata is missing
+- [ ] Create a new Linux account before committing new ConfigDB metadata
 - [ ] Persist only non-secret user metadata to ConfigDB
+- [ ] Never store or return passwords
+- [ ] Implement rollback for Linux-account/ConfigDB partial failure
+- [ ] Share the same manager between CLI and REST API
 
-### 11.3 CLI
+### 11.3 SONiC CLI and console-cli Integration
+
+#### SONiC Configuration Commands
+
+- [ ] `config console-server port baudrate`
+- [ ] `config console-server port databits`
+- [ ] `config console-server port parity`
+- [ ] `config console-server port stopbits`
+- [ ] `config console-server port flowcontrol`
+- [ ] `config console-server port mode`
+- [ ] `config console-server port max-clients`
+- [ ] `config console-server port idle-timeout`
+- [ ] `config console-server port label`
+- [ ] `config console-server group add`
+- [ ] `config console-server group del`
+- [ ] `config console-server user add`
+- [ ] `config console-server user del`
+
+#### SONiC Display and Runtime Commands
+
+- [ ] `show console-server port`
+- [ ] `show console-server group`
+- [ ] `show console-server user`
+- [ ] `show console-server sessions`
+- [ ] `show console-server product-info`
+- [ ] `connect line <port_number>`
+- [ ] Use standard `config save` for persistence
+
+#### Existing console-cli Paths
 
 - [ ] `console-cli config port`
 - [ ] `console-cli config operation`
 - [ ] `console-cli config group add`
 - [ ] `console-cli config group delete`
+- [ ] `console-cli config user add`
+- [ ] `console-cli config user delete`
 - [ ] `console-cli show running-config`
 - [ ] `console-cli show startup-config`
-- [ ] `console-cli show sessions`
+- [ ] `console-cli show sessions --json`
 - [ ] `console-cli show product-info`
 - [ ] `console-cli connect`
 
@@ -1013,9 +1050,13 @@ leaf idle_timeout {
 - [ ] Apply port setting changes
 - [ ] Apply mode/max-client/idle-timeout behavior
 - [ ] Enforce group-to-port access
-- [ ] Generate runtime session output
+- [ ] Track active clients and writer/observer state
+- [ ] Generate session IDs
+- [ ] Expose session data through the existing `seriald` socket/internal API
+- [ ] Provide machine-readable JSON through `console-cli show sessions --json`
+- [ ] Keep interactive console traffic on the existing `console-cli connect` / `seriald` path
+- [ ] Do not use `STATE_DB` for session display or interactive data in the first implementation
 
----
 
 ## 12. Recommended First Implementation Scope
 
