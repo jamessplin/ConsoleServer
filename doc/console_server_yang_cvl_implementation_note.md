@@ -1523,16 +1523,7 @@ Linux user exists but CONSOLE_SERVER_USER metadata is missing:
 
 The CLI and REST layers must not duplicate these parsing, normalization, validation, or transaction rules.
 
-Minimum user-management contract:
-
-```python
-def validate_local_user_exists(username: str) -> None:
-    """Validate the username against the configured Linux/NSS backend."""
-```
-
-The shared manager must also support user creation, password update, deletion, non-secret metadata updates, and rollback across Linux account state and ConfigDB.
-
-Detailed API definitions and transaction behavior are specified in:
+Detailed user creation, password update, deletion, non-secret metadata updates, and rollback behavior are specified in:
 
 ```text
 console_server_user_management_implementation.md
