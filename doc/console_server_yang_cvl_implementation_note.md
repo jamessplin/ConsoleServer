@@ -66,6 +66,11 @@ The CLI manual defines the following major command groups:
 
 The writable ConfigDB model includes serial port settings, groups, group-to-port mappings, and non-secret console-server user metadata. Passwords and Linux authentication data remain outside ConfigDB.
 
+`CONSOLE_SERVER_PORT` is a platform-initialized complete table. During initialization, one entry must be created for every valid physical console port from `1` through `max_ports`. Each entry contains the effective default serial and operational settings, including the default label `COM<port>`.
+
+For brevity, the example below shows only selected `CONSOLE_SERVER_PORT` entries. The actual table contains every valid platform port so all `CONSOLE_SERVER_GROUP_PORT.port` leafrefs can resolve.
+
+
 ```json
 {
     "CONSOLE_SERVER_PORT": {
@@ -98,6 +103,9 @@ The writable ConfigDB model includes serial port settings, groups, group-to-port
             "role": "console_user"
         },
         "Group_A": {
+            "role": "console_user"
+        },
+        "Group_B": {
             "role": "console_user"
         },
         "Group_C": {
@@ -270,6 +278,8 @@ The shared config manager should own:
 
 | Function | Owner |
 |---|---|
+| Initialize `CONSOLE_SERVER_PORT` entries for `1..max_ports` | Platform initialization / shared config manager |
+| Populate default settings and `COM<port>` labels | Platform initialization / shared config manager |
 | Parse port range strings | Shared config manager |
 | Expand `all` to `1..max_ports` | Shared config manager |
 | Validate platform-specific `max_ports` | Shared config manager |
@@ -543,6 +553,7 @@ The skeleton in Section 7.1 contains several non-obvious modeling choices. The t
 | Dynamic default port label | YANG cannot express a default derived from another leaf, such as `COM<port>`. The shared config manager must normalize an omitted label for a new port, or an explicitly blank label, to `COM<port>` before CVL validation and ConfigDB write. The stored label is mandatory and non-empty. |
 | Reserved `COM<port>` labels | `COM1` through `COM<max_ports>` are reserved for their matching ports so every port can always be reset to its deterministic default. Reserved-name matching is case-insensitive, and reserved labels are stored canonically in uppercase. |
 | `leafref` for both keys of `CONSOLE_SERVER_GROUP_PORT_LIST` | Enforces referential integrity at the CVL level. A group-port mapping entry for a non-existent group or port is rejected at write time, preventing orphan entries. |
+| Complete `CONSOLE_SERVER_PORT` population | The platform initializes one entry for every valid physical console port from `1` through `max_ports`. This allows `CONSOLE_SERVER_GROUP_PORT.port` to use a `leafref`, prevents mappings to nonexistent ports, and ensures every physical port always has effective defaults and a `COM<port>` label. |
 | `idle_timeout` range `0..86400` with `0` meaning disabled | Avoids a separate boolean flag. `0` is the conventional sentinel for "no timeout" across SONiC models. `86400` seconds (24 hours) is the approved upper bound. |
 | No `CONSOLE_SERVER_GLOBAL` container | Product and platform info such as `base_port`, `max_ports`, `max_users`, and `max_groups` is read-only deployment metadata. It must not be modeled as writable ConfigDB data. |
 | User metadata without password leaf | `CONSOLE_SERVER_USER` stores only non-secret metadata such as username and role. `CONSOLE_SERVER_USER_GROUP` stores normalized membership. Password is never a ConfigDB leaf; it is accepted only as a CLI/REST operation input and is written to the Linux authentication backend. |
@@ -576,7 +587,9 @@ rpc console-server-user-add {
             type string {
                 length "1..128";
             }
-            mandatory true;
+            description
+                "Required when creating a new Linux user. Optional when "
+              + "updating or importing an existing Linux user.";
         }
 
         leaf role {
@@ -622,6 +635,15 @@ Required behavior:
 ```text
 username / role / groups -> ConfigDB non-secret metadata
 password                 -> Linux authentication backend only
+
+New Linux user:
+    password is required
+
+Existing Linux user:
+    password is optional; when omitted, the current password is unchanged
+
+Existing Linux user without CONSOLE_SERVER_USER metadata:
+    import/create the missing ConfigDB metadata without recreating the Linux account
 ```
 
 The password must never be stored in ConfigDB, returned by REST GET/show commands, printed in logs, or included in error messages.
@@ -744,9 +766,14 @@ Required behavior:
 
 ```python
 def normalize_port_label(port: int, label: str | None) -> str:
-    if label is None or not label.strip():
+    if label is None:
         return f"COM{port}"
-    return label
+
+    normalized = label.strip()
+    if not normalized:
+        return f"COM{port}"
+
+    return normalized
 ```
 
 Reserved default labels must be validated before the general uniqueness check.
@@ -807,6 +834,8 @@ def validate_reserved_port_label(
 ```
 
 Canonical storage should use uppercase `COM<port>` for reserved default labels.
+General custom-label uniqueness is case-sensitive. Only reserved `COM<port>` matching is case-insensitive. Leading and trailing whitespace is removed before validation and storage.
+
 
 ### 8.2 Error Contract
 
@@ -869,10 +898,22 @@ Do not hard-code `1..24` in YANG.
 Recommended design:
 
 ```text
-YANG: generic range 1..256
-Shared config manager: platform-specific max_ports check
-CVL: leafref validates that group-port mappings refer to defined CONSOLE_SERVER_PORT entries
+Platform initialization:
+    create CONSOLE_SERVER_PORT entries for every port in 1..max_ports
+    populate each entry with default settings and label COM<port>
+
+YANG:
+    use a generic key range of 1..256
+
+Shared config manager:
+    reject user input outside 1..max_ports
+
+CVL:
+    validate that every CONSOLE_SERVER_GROUP_PORT mapping references an
+    existing CONSOLE_SERVER_PORT entry
 ```
+
+Physical `CONSOLE_SERVER_PORT` entries are platform-owned. Normal CLI and REST operations may update their attributes but must not create or delete individual physical port entries.
 
 Example:
 
@@ -915,39 +956,6 @@ If state YANG is required later, create a separate operational/state model. Do n
 
 ---
 
-## 10.1 YANG Hardening Requirements
-
-Before implementation is accepted:
-
-- Validate `sonic-console-server.yang` with `pyang`.
-- Represent `baudrate` as `uint32` with an explicit allowed-value range, not as bare numeric enumeration tokens.
-- Model `idle_timeout = 0` explicitly as disabled behavior.
-- Use the approved `idle_timeout` range `0..86400`; `0` disables the timeout.
-- Enforce label uniqueness with `unique "label"`.
-- Keep the shared config manager error contract aligned between CLI and REST API.
-
-Recommended validation command:
-
-```bash
-pyang -p yang-models yang-models/sonic-console-server.yang
-```
-
-The approved `idle_timeout` definition is:
-
-```yang
-leaf idle_timeout {
-    type uint32 {
-        range "0..86400";
-    }
-    default "600";
-    description
-        "Idle timeout in seconds. A value of 0 disables the idle timeout.";
-}
-```
-
-`86400` seconds is the approved maximum.
-
----
 
 ## 11. Implementation Checklist
 
@@ -959,6 +967,9 @@ leaf idle_timeout {
 - [ ] Model `baudrate` as restricted `uint32`
 - [ ] Set `idle_timeout` range to `0..86400`
 - [ ] Add `CONSOLE_SERVER_PORT`
+- [ ] Initialize `CONSOLE_SERVER_PORT` for every valid port in `1..max_ports`
+- [ ] Populate each port with default settings and `COM<port>` label
+- [ ] Prevent normal CLI/REST operations from creating or deleting physical port entries
 - [ ] Add `CONSOLE_SERVER_GROUP`
 - [ ] Add `CONSOLE_SERVER_GROUP_PORT`
 - [ ] Add `CONSOLE_SERVER_USER` for non-secret username/role metadata
@@ -992,6 +1003,7 @@ leaf idle_timeout {
 - [ ] Implement `write_transaction(operations)`
 - [ ] Implement reverse conversion for show commands
 - [ ] Validate platform-specific `max_ports`
+- [ ] Verify every `CONSOLE_SERVER_GROUP_PORT` mapping resolves to an existing port entry
 - [ ] Validate Linux/NSS user existence for existing users
 - [ ] Require password only when creating a new Linux user
 - [ ] Keep the existing password unchanged when omitted for an existing user
@@ -1058,7 +1070,7 @@ leaf idle_timeout {
 - [ ] Do not use `STATE_DB` for session display or interactive data in the first implementation
 
 
-## 12. Recommended First Implementation Scope
+## 12. Initial Implementation Scope
 
 Start with:
 
@@ -1211,20 +1223,15 @@ show console-server product-info
 
 Use them like this:
 
-- `show console-server port`
-Shows the current effective port configuration, such as baud rate, data bits, parity, stop bits, flow control, mode, maximum clients, idle timeout, and label.
+- `show console-server port` — Shows the current effective port configuration, such as baud rate, data bits, parity, stop bits, flow control, mode, maximum clients, idle timeout, and label.
 
-- `show console-server group`
-Shows configured groups, roles, and permitted ports.
+- `show console-server group` — Shows configured groups, roles, and permitted ports.
 
-- `show console-server user`
-Shows users, assigned roles, and group membership. Do not display passwords.
+- `show console-server user` — Shows users, assigned roles, and group membership. Do not display passwords.
 
-- `show console-server sessions`
-Shows runtime session status only, such as connected users, source addresses, port number, connection time, idle time, and session mode.
+- `show console-server sessions` — Shows runtime session status only, such as connected users, source addresses, port number, connection time, idle time, and session mode.
 
-- `show console-server product-info`
-Shows hardware or product information.
+- `show console-server product-info` — Shows hardware or product information.
 
 
 `tcp_port` is a derived runtime/display value and is not stored as an independent ConfigDB field.
@@ -1259,8 +1266,8 @@ admin@sonic:~$ show console-server group
 group          port_list                                                                              role
 -------------  -------------------------------------------------------------------------------------  ------------
 Group_Default  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24  console_user
-groupA         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15                                              admin
-groupB         13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24                                             admin
+Group_A         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15                                              admin
+Group_B         13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24                                             admin
 ```
 
 ```text
@@ -1269,8 +1276,8 @@ user   group          role
 -----  -------------  --------
 admin  Group_Default  admin
 bmc    Group_Default  admin
-bob    groupA         none
-ted    groupB         operator
+bob    Group_A         none
+ted    Group_B         operator
 ```
 
 ```text
@@ -1472,7 +1479,7 @@ def set_group_ports(group_name: str, expression: str) -> None:
 
 ```python
 def write_transaction(operations: list) -> None:
-    """Run CVL/schema validation and commit all ConfigDB operations atomically."""
+    """Validate and atomically commit the ConfigDB operations."""
 ```
 
 Additional label-specific helpers remain part of the same shared manager:
@@ -1521,6 +1528,9 @@ Linux user exists but CONSOLE_SERVER_USER metadata is missing:
     create/import the missing ConfigDB metadata without recreating the Linux account
 ```
 
+
+Linux account changes and ConfigDB updates are not one native atomic transaction. They must be coordinated using validation-before-write and compensating rollback, as defined in `console_server_user_management_implementation.md`.
+
 The CLI and REST layers must not duplicate these parsing, normalization, validation, or transaction rules.
 
 Detailed user creation, password update, deletion, non-secret metadata updates, and rollback behavior are specified in:
@@ -1529,8 +1539,6 @@ Detailed user creation, password update, deletion, non-secret metadata updates, 
 console_server_user_management_implementation.md
 ```
 
-
----
 
 ---
 
