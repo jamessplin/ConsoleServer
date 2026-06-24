@@ -238,9 +238,9 @@ Linux user present + ConfigDB metadata absent:
 
 Standard YANG does not define a general write-only configuration leaf.
 
-Password should be modeled only as an operation input when the selected SONiC REST framework supports YANG RPC/action operations.
+Password must be modeled only as a transient operation input when the selected SONiC REST framework supports YANG RPC/action operations. The combined user operation supports create, update, and import behavior, so password presence is validated conditionally by the backend rather than with `mandatory true`.
 
-Example:
+### 5.1 Add or Update User Operation
 
 ```yang
 rpc console-server-user-add {
@@ -257,7 +257,9 @@ rpc console-server-user-add {
             type string {
                 length "1..128";
             }
-            mandatory true;
+            description
+                "Required when creating a new Linux user. Optional when "
+              + "updating or importing an existing Linux user.";
         }
 
         leaf role {
@@ -279,10 +281,55 @@ rpc console-server-user-add {
 }
 ```
 
-If the selected SONiC REST framework does not support arbitrary YANG RPC/action nodes, define dedicated operation endpoints with the same storage and security rules.
+Backend validation:
 
----
+```text
+Linux user does not exist, password missing:
+    reject with CONSOLE_SERVER_PASSWORD_REQUIRED
 
+Linux user does not exist, password supplied:
+    create the Linux account and write non-secret ConfigDB metadata
+
+Linux user exists, password omitted:
+    keep the current password unchanged and update supplied metadata
+
+Linux user exists, password supplied:
+    update the password and supplied metadata
+
+Linux user exists but CONSOLE_SERVER_USER metadata is missing:
+    import/create the missing ConfigDB metadata without recreating the Linux account
+```
+
+### 5.2 Password-Only Update Operation
+
+A separate password-only operation may be provided when the REST API needs an explicit password-management endpoint:
+
+```yang
+rpc console-server-user-password-set {
+    input {
+        leaf username {
+            type string {
+                length "1..32";
+                pattern '[A-Za-z_][A-Za-z0-9_-]*';
+            }
+            mandatory true;
+        }
+
+        leaf password {
+            type string {
+                length "1..128";
+            }
+            mandatory true;
+        }
+    }
+}
+```
+
+This operation updates only the Linux authentication backend. It must not create or modify a ConfigDB password field.
+
+### 5.3 REST Framework Compatibility
+
+If the selected SONiC REST framework does not support arbitrary YANG RPC/action nodes, define dedicated operation endpoints with the same input, validation, storage, and security rules.
 ## 6. Operation Semantics
 
 ### 6.1 Add New User

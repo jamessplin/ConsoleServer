@@ -344,213 +344,35 @@ Use single-line `leafref` paths in the actual `.yang` file.
 
 Do not split paths using `+`.
 
-### 7.1 Skeleton
+### 7.1 Authoritative YANG File
 
-```yang
-module sonic-console-server {
-    yang-version 1.1;
+The authoritative schema, including ConfigDB data nodes and user-management RPC inputs, is maintained in:
 
-    namespace "http://github.com/sonic-net/sonic-console-server";
-    prefix cs;
-
-    description
-        "SONiC console server configuration model.";
-
-    revision 2026-06-12 {
-        description
-            "Initial revision.";
-    }
-
-    container sonic-console-server {
-        container CONSOLE_SERVER_PORT {
-            list CONSOLE_SERVER_PORT_LIST {
-                key "port";
-                unique "label";
-
-                leaf port {
-                    type uint16 {
-                        range "1..256";
-                    }
-                    description
-                        "Serial line number.";
-                }
-
-                leaf baudrate {
-                    type uint32 {
-                        range "300 | 1200 | 2400 | 4800 | 9600 | 19200 | 38400 | 57600 | 115200 | 230400 | 460800 | 921600";
-                    }
-                    default "115200";
-                    description
-                        "Supported serial baud rate.";
-                }
-
-                leaf databits {
-                    type uint8 {
-                        range "5..8";
-                    }
-                    default "8";
-                }
-
-                leaf parity {
-                    type enumeration {
-                        enum none;
-                        enum even;
-                        enum odd;
-                        enum mark;
-                        enum space;
-                    }
-                    default "none";
-                }
-
-                leaf stopbits {
-                    type uint8 {
-                        range "1..2";
-                    }
-                    default "1";
-                }
-
-                leaf flowcontrol {
-                    type enumeration {
-                        enum none;
-                        enum rtscts;
-                        enum xonxoff;
-                    }
-                    default "none";
-                }
-
-                leaf mode {
-                    type enumeration {
-                        enum exclusive;
-                        enum shared;
-                    }
-                    default "shared";
-                }
-
-                leaf max_clients {
-                    type uint8 {
-                        range "1..4";
-                    }
-                    default "1";
-                }
-
-                leaf idle_timeout {
-                    type uint32 {
-                        range "0..86400";
-                    }
-                    default "600";
-                    description
-                        "Idle timeout in seconds. A value of 0 disables the idle timeout. "
-                      + "The maximum supported value is 86400 seconds.";
-                }
-
-                leaf label {
-                    type string {
-                        length "1..16";
-                    }
-                    mandatory true;
-                    description
-                        "Unique user-friendly serial line label. The shared "
-                      + "config manager generates COM<port> when a new port "
-                      + "has no label or when a blank label is explicitly "
-                      + "provided.";
-                }
-            }
-        }
-
-        container CONSOLE_SERVER_GROUP {
-            list CONSOLE_SERVER_GROUP_LIST {
-                key "groupname";
-
-                leaf groupname {
-                    type string {
-                        length "1..32";
-                    }
-                }
-
-                leaf role {
-                    type enumeration {
-                        enum operator;
-                        enum console_user;
-                        enum admin;
-                    }
-                    default "console_user";
-                }
-            }
-        }
-
-        container CONSOLE_SERVER_GROUP_PORT {
-            list CONSOLE_SERVER_GROUP_PORT_LIST {
-                key "groupname port";
-
-                leaf groupname {
-                    type leafref {
-                        path "/cs:sonic-console-server/cs:CONSOLE_SERVER_GROUP/cs:CONSOLE_SERVER_GROUP_LIST/cs:groupname";
-                    }
-                }
-
-                leaf port {
-                    type leafref {
-                        path "/cs:sonic-console-server/cs:CONSOLE_SERVER_PORT/cs:CONSOLE_SERVER_PORT_LIST/cs:port";
-                    }
-                }
-            }
-        }
-
-        container CONSOLE_SERVER_USER {
-            list CONSOLE_SERVER_USER_LIST {
-                key "username";
-
-                leaf username {
-                    type string {
-                        length "1..32";
-                        pattern '[A-Za-z_][A-Za-z0-9_-]*';
-                    }
-                }
-
-                leaf role {
-                    type enumeration {
-                        enum none;
-                        enum operator;
-                        enum console_user;
-                        enum admin;
-                    }
-                    default "none";
-                }
-            }
-        }
-
-        container CONSOLE_SERVER_USER_GROUP {
-            list CONSOLE_SERVER_USER_GROUP_LIST {
-                key "username groupname";
-
-                leaf username {
-                    type leafref {
-                        path "/cs:sonic-console-server/cs:CONSOLE_SERVER_USER/cs:CONSOLE_SERVER_USER_LIST/cs:username";
-                    }
-                }
-
-                leaf groupname {
-                    type leafref {
-                        path "/cs:sonic-console-server/cs:CONSOLE_SERVER_GROUP/cs:CONSOLE_SERVER_GROUP_LIST/cs:groupname";
-                    }
-                }
-            }
-        }
-    }
-}
+```text
+src/sonic-yang-models/yang-models/sonic-console-server.yang
 ```
+
+For this review, the validated file is provided as:
+
+```text
+sonic-console-server.yang
+```
+
+This design note records the rationale and acceptance criteria only. The embedded draft skeleton has been removed to avoid drift between the design note and the implementation.
+
+The accepted file version is identified by the `pyang` version, validation command and result, generated tree output, and SHA-256 hash recorded in Section 7.3.
 
 ---
 
 ### 7.2 Design Rationale
 
-The skeleton in Section 7.1 contains several non-obvious modeling choices. The table below records the reasoning for each one so implementers do not revisit settled decisions.
+The authoritative YANG file contains several non-obvious modeling choices. The table below records the reasoning for each one so implementers do not revisit settled decisions.
 
 | Choice | Rationale |
 |---|---|
 | `baudrate` as `uint32` with a discrete allowed-value range, not `enumeration` | YANG `enumeration` assigns string identity names to each value. A `uint32` range with discrete values (`300 \| 1200 \| ...`) keeps the leaf numeric and machine-comparable, which aligns with how SONiC models similar integer-valued constraints. |
 | `unique "label"` on the list, not a `must` expression | `unique` is the YANG 1.1 idiomatic statement for enforcing non-key leaf uniqueness across list entries. A `must` XPath over the full list is harder to maintain and less portable across CVL implementations. |
-| Dynamic default port label | YANG cannot express a default derived from another leaf, such as `COM<port>`. The shared config manager must normalize an omitted label for a new port, or an explicitly blank label, to `COM<port>` before CVL validation and ConfigDB write. The stored label is mandatory and non-empty. |
+| Dynamic default port label | YANG cannot express a default derived from another leaf, such as `COM<port>`. The shared config manager must normalize an omitted label for a new port, or an explicitly blank label, to `COM<port>` before CVL validation and ConfigDB write. The YANG leaf is optional for schema consistency, but platform initialization and all supported writers must materialize a non-empty effective label in ConfigDB. |
 | Reserved `COM<port>` labels | `COM1` through `COM<max_ports>` are reserved for their matching ports so every port can always be reset to its deterministic default. Reserved-name matching is case-insensitive, and reserved labels are stored canonically in uppercase. |
 | `leafref` for both keys of `CONSOLE_SERVER_GROUP_PORT_LIST` | Enforces referential integrity at the CVL level. A group-port mapping entry for a non-existent group or port is rejected at write time, preventing orphan entries. |
 | Complete `CONSOLE_SERVER_PORT` population | The platform initializes one entry for every valid physical console port from `1` through `max_ports`. This allows `CONSOLE_SERVER_GROUP_PORT.port` to use a `leafref`, prevents mappings to nonexistent ports, and ensures every physical port always has effective defaults and a `COM<port>` label. |
@@ -570,72 +392,11 @@ Implementation details are defined in `console_server_user_management_implementa
 
 Standard YANG does not provide a general write-only configuration leaf. Therefore, `password` must not be added to `CONSOLE_SERVER_USER`.
 
-Model password only as an operation input, for example through a YANG `rpc` or `action` if the selected SONiC REST stack supports it:
-
-```yang
-rpc console-server-user-add {
-    input {
-        leaf username {
-            type string {
-                length "1..32";
-                pattern '[A-Za-z_][A-Za-z0-9_-]*';
-            }
-            mandatory true;
-        }
-
-        leaf password {
-            type string {
-                length "1..128";
-            }
-            description
-                "Required when creating a new Linux user. Optional when "
-              + "updating or importing an existing Linux user.";
-        }
-
-        leaf role {
-            type enumeration {
-                enum none;
-                enum operator;
-                enum console_user;
-                enum admin;
-            }
-            default "none";
-        }
-
-        leaf-list groups {
-            type leafref {
-                path "/cs:sonic-console-server/cs:CONSOLE_SERVER_GROUP/cs:CONSOLE_SERVER_GROUP_LIST/cs:groupname";
-            }
-        }
-    }
-}
-
-rpc console-server-user-password-set {
-    input {
-        leaf username {
-            type string {
-                length "1..32";
-                pattern '[A-Za-z_][A-Za-z0-9_-]*';
-            }
-            mandatory true;
-        }
-
-        leaf password {
-            type string {
-                length "1..128";
-            }
-            mandatory true;
-        }
-    }
-}
-```
+Password must be modeled only as a transient CLI/REST operation input.
 
 Required behavior:
 
 ```text
-username / role / groups -> ConfigDB non-secret metadata
-password                 -> Linux authentication backend only
-
 New Linux user:
     password is required
 
@@ -643,25 +404,29 @@ Existing Linux user:
     password is optional; when omitted, the current password is unchanged
 
 Existing Linux user without CONSOLE_SERVER_USER metadata:
-    import/create the missing ConfigDB metadata without recreating the Linux account
+    create/import the missing ConfigDB metadata without recreating the Linux account
 ```
 
 The password must never be stored in ConfigDB, returned by REST GET/show commands, printed in logs, or included in error messages.
 
-If the selected SONiC REST framework does not support arbitrary YANG `rpc` or `action` nodes, implement a dedicated REST operation endpoint with the same storage and security rules.
+Detailed RPC/action examples, backend behavior, transaction ordering, rollback, and security requirements are defined in:
+
+```text
+console_server_user_management_implementation.md
+```
 
 ### 7.3 `pyang` Acceptance Gate
 
-Section 7 is a design draft until the exact final YANG file passes `pyang`.
+The exact YANG file has passed the initial `pyang` acceptance gate recorded below.
 
 Before coding starts, perform and record the following:
 
 ```bash
 pyang --version
-pyang -p yang-models yang-models/sonic-console-server.yang
+pyang sonic-console-server.yang
 echo $?
-pyang -p yang-models -f tree yang-models/sonic-console-server.yang
-sha256sum yang-models/sonic-console-server.yang
+pyang -f tree sonic-console-server.yang > sonic-console-server.tree
+sha256sum sonic-console-server.yang
 ```
 
 Acceptance criteria:
@@ -679,19 +444,19 @@ Validated file:
 sonic-console-server.yang
 
 pyang version:
-<pending>
+__main__.py 2.7.1
 
 Validation command:
-pyang -p yang-models yang-models/sonic-console-server.yang
+python -m pyang sonic-console-server.yang
 
 Validation result:
-PENDING
+PASS
 
 File SHA-256:
-<pending>
+70cad005e348df60e7985a9ce751a8a755bf12922ee4bf08e6ece2223c7481b9
 ```
 
-Do not mark Section 7 implementation-ready until the exact accepted file content, `pyang` version, validation result, and SHA-256 are recorded.
+Section 7 is implementation-ready for schema syntax review. Repository integration and SONiC CVL build validation remain separate follow-up steps.
 
 
 ## 8. Label Defaulting and Uniqueness
@@ -715,6 +480,8 @@ Existing port, label explicitly blank:
 ```
 
 YANG cannot express the dynamic default `COM<port>`, so the shared config manager must perform this normalization before CVL validation and ConfigDB write.
+Although the YANG `label` leaf is optional, every valid runtime `CONSOLE_SERVER_PORT` entry must contain an explicitly materialized label in ConfigDB. Platform initialization and all supported CLI/REST writers must preserve this invariant. Backend applications may rely on the label being present and must not implement their own fallback logic.
+
 
 Example:
 
@@ -722,7 +489,7 @@ Example:
 port 5 + missing/blank label -> COM5
 ```
 
-The YANG list should enforce uniqueness directly, and the `label` leaf must be mandatory because every stored port entry has a normalized non-empty label:
+The YANG list should continue to enforce uniqueness for physically stored labels. The `label` leaf is not marked `mandatory`; instead, platform initialization and all supported CLI/REST writers must materialize a non-empty effective label in ConfigDB:
 
 ```yang
 list CONSOLE_SERVER_PORT_LIST {
@@ -749,8 +516,8 @@ Validation should be performed at two levels:
 
 | Layer | Responsibility |
 |---|---|
-| Shared config manager | Detect duplicates early and return a clear interface-specific error |
-| YANG/CVL | Final schema-level enforcement through `unique "label"` |
+| Shared config manager | Materialize `COM<port>`, enforce reserved-name ownership, and validate effective-label uniqueness before ConfigDB write |
+| YANG/CVL | Enforce string constraints and uniqueness for physically stored label values through `unique "label"` |
 
 
 ### 8.1 Label Normalization
@@ -977,7 +744,8 @@ If state YANG is required later, create a separate operational/state model. Do n
 - [ ] Do not add writable `CONSOLE_SERVER_GLOBAL`
 - [ ] Do not add `password` as a ConfigDB leaf
 - [ ] Add `unique "label"` to `CONSOLE_SERVER_PORT_LIST`
-- [ ] Make `label` mandatory in the stored YANG model
+- [ ] Keep `label` optional in YANG for consistency with other leaves
+- [ ] Materialize a non-empty effective label in every ConfigDB port entry
 - [ ] Validate stored label type and length
 - [ ] Validate the final YANG with `pyang`
 - [ ] Record the accepted `pyang` version and file SHA-256

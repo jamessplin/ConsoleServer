@@ -1,0 +1,42 @@
+module: sonic-console-server
+  +--rw sonic-console-server
+     +--rw CONSOLE_SERVER_PORT
+     |  +--rw CONSOLE_SERVER_PORT_LIST* [port]
+     |     +--rw port            uint16
+     |     +--rw baudrate?       uint32
+     |     +--rw databits?       uint8
+     |     +--rw parity?         enumeration
+     |     +--rw stopbits?       uint8
+     |     +--rw flowcontrol?    enumeration
+     |     +--rw mode?           enumeration
+     |     +--rw max_clients?    uint8
+     |     +--rw idle_timeout?   uint32
+     |     +--rw label?          string
+     +--rw CONSOLE_SERVER_GROUP
+     |  +--rw CONSOLE_SERVER_GROUP_LIST* [groupname]
+     |     +--rw groupname    string
+     |     +--rw role?        enumeration
+     +--rw CONSOLE_SERVER_GROUP_PORT
+     |  +--rw CONSOLE_SERVER_GROUP_PORT_LIST* [groupname port]
+     |     +--rw groupname    -> /sonic-console-server/CONSOLE_SERVER_GROUP/CONSOLE_SERVER_GROUP_LIST/groupname
+     |     +--rw port         -> /sonic-console-server/CONSOLE_SERVER_PORT/CONSOLE_SERVER_PORT_LIST/port
+     +--rw CONSOLE_SERVER_USER
+     |  +--rw CONSOLE_SERVER_USER_LIST* [username]
+     |     +--rw username    string
+     |     +--rw role?       enumeration
+     +--rw CONSOLE_SERVER_USER_GROUP
+        +--rw CONSOLE_SERVER_USER_GROUP_LIST* [username groupname]
+           +--rw username     -> /sonic-console-server/CONSOLE_SERVER_USER/CONSOLE_SERVER_USER_LIST/username
+           +--rw groupname    -> /sonic-console-server/CONSOLE_SERVER_GROUP/CONSOLE_SERVER_GROUP_LIST/groupname
+
+  rpcs:
+    +---x console-server-user-add
+    |  +---w input
+    |     +---w username    string
+    |     +---w password?   string
+    |     +---w role?       enumeration
+    |     +---w groups*     -> /sonic-console-server/CONSOLE_SERVER_GROUP/CONSOLE_SERVER_GROUP_LIST/groupname
+    +---x console-server-user-password-set
+       +---w input
+          +---w username    string
+          +---w password    string
