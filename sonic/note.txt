@@ -1,0 +1,4 @@
+sonic/src/sonic-yang-models$
+     yang-models/sonic-console-server.yang
+     setup.py
+
