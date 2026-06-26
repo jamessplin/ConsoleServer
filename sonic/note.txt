@@ -1,4 +1,9 @@
 sonic/src/sonic-yang-models$
      yang-models/sonic-console-server.yang
      setup.py
+     tests/yang_model_tests/tests/console_server.json
+     tests/yang_model_tests/tests_config/console_server_config.json (must rename it to console_server.json)
 
+
+
+cp tests/yang_model_tests/test_yang_model.py tests/yang_model_tests/test_yang_model_bak.py
