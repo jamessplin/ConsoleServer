@@ -26,11 +26,12 @@ from sonic_console_server_manager.manager import (
 
 
 class FakeConfigDb:
-    def __init__(self, tables=None):
+    def __init__(self, tables=None, events=None):
         self.tables = deepcopy(tables or {})
         self.prevalidated = []
         self.committed = []
         self.fail_commit = False
+        self.events = events
 
     def get_table(self, table):
         return deepcopy(self.tables.get(table, {}))
@@ -40,8 +41,12 @@ class FakeConfigDb:
 
     def prevalidate(self, operations):
         self.prevalidated.append(list(operations))
+        if self.events is not None:
+            self.events.append("prevalidate")
 
     def commit(self, operations):
+        if self.events is not None:
+            self.events.append("commit")
         if self.fail_commit:
             raise RuntimeError("commit failed")
         self.committed.append(list(operations))
@@ -62,12 +67,15 @@ class FakePortProvider:
 
 
 class FakeStatus:
-    def __init__(self):
+    def __init__(self, events=None):
         self.calls = []
         self.fail = False
+        self.events = events
 
     def run(self, arguments, *, quiet=True):
         self.calls.append(list(arguments))
+        if self.events is not None:
+            self.events.append("status")
         if self.fail:
             from sonic_console_server_manager.manager import CommandResult
 
@@ -151,8 +159,12 @@ def test_build_port_config_materializes_complete_entry():
 
 
 def test_set_port_config_prevalidates_calls_status_then_commits():
-    db = FakeConfigDb({PORT_TABLE: {"1": {"label": "COM1", "baudrate": 9600}}})
-    status = FakeStatus()
+    events = []
+    db = FakeConfigDb(
+        {PORT_TABLE: {"1": {"label": "COM1", "baudrate": 9600}}},
+        events=events,
+    )
+    status = FakeStatus(events=events)
     manager = SonicConsoleServerManager(
         config_db=db,
         port_provider=FakePortProvider({1}),
@@ -162,6 +174,7 @@ def test_set_port_config_prevalidates_calls_status_then_commits():
 
     manager.set_port_config(1, {"baudrate": 115200})
 
+    assert events == ["prevalidate", "status", "commit"]
     assert db.prevalidated
     assert status.calls == [["config-port", "1", "--baudrate", "115200"]]
     assert db.tables[PORT_TABLE]["1"]["baudrate"] == 115200
