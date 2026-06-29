@@ -107,6 +107,60 @@ class FakeUsers:
         self.existing.discard(username)
 
 
+class FakeRawConfigDb:
+    def __init__(self, tables=None):
+        self.tables = deepcopy(tables or {})
+
+    def get_table(self, table):
+        return deepcopy(self.tables.get(table, {}))
+
+    def get_entry(self, table, key):
+        return deepcopy(self.tables.get(table, {}).get(key, {}))
+
+
+class FakeGenericUpdater:
+    def __init__(self, calls, results=None):
+        self.calls = calls
+        self.results = list(results or [])
+
+    def apply_patch(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.results:
+            result = self.results.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+        return None
+
+
+def make_sonic_config_db_backend(initial_config, *, updater_results=None):
+    calls = []
+    patches = []
+    updater = FakeGenericUpdater(calls, updater_results)
+
+    def config_loader(scope):
+        assert scope == "host"
+        return deepcopy(initial_config)
+
+    def patch_builder(current, candidate):
+        patch = {
+            "current": deepcopy(current),
+            "candidate": deepcopy(candidate),
+        }
+        patches.append(patch)
+        return patch
+
+    backend = SonicConfigDbBackend(
+        scope="host",
+        config_db=FakeRawConfigDb(initial_config),
+        updater_factory=lambda: updater,
+        config_loader=config_loader,
+        patch_builder=patch_builder,
+        config_format="CONFIGDB",
+    )
+    return backend, calls, patches
+
+
 def test_parse_port_expression():
     assert parse_port_expression("1-3,5,3") == [1, 2, 3, 5]
     assert parse_port_expression("all", all_ports={3, 1, 2}) == [1, 2, 3]
@@ -262,60 +316,6 @@ def test_config_db_operation_contract():
         ConfigDbOperation("set", "T", "K", None)
     with pytest.raises(ValueError):
         ConfigDbOperation("delete", "T", "K", {})
-
-
-class FakeRawConfigDb:
-    def __init__(self, tables=None):
-        self.tables = deepcopy(tables or {})
-
-    def get_table(self, table):
-        return deepcopy(self.tables.get(table, {}))
-
-    def get_entry(self, table, key):
-        return deepcopy(self.tables.get(table, {}).get(key, {}))
-
-
-class FakeGenericUpdater:
-    def __init__(self, calls, results=None):
-        self.calls = calls
-        self.results = list(results or [])
-
-    def apply_patch(self, **kwargs):
-        self.calls.append(kwargs)
-        if self.results:
-            result = self.results.pop(0)
-            if isinstance(result, Exception):
-                raise result
-            return result
-        return None
-
-
-def make_sonic_config_db_backend(initial_config, *, updater_results=None):
-    calls = []
-    patches = []
-    updater = FakeGenericUpdater(calls, updater_results)
-
-    def config_loader(scope):
-        assert scope == "host"
-        return deepcopy(initial_config)
-
-    def patch_builder(current, candidate):
-        patch = {
-            "current": deepcopy(current),
-            "candidate": deepcopy(candidate),
-        }
-        patches.append(patch)
-        return patch
-
-    backend = SonicConfigDbBackend(
-        scope="host",
-        config_db=FakeRawConfigDb(initial_config),
-        updater_factory=lambda: updater,
-        config_loader=config_loader,
-        patch_builder=patch_builder,
-        config_format="CONFIGDB",
-    )
-    return backend, calls, patches
 
 
 def test_sonic_config_db_backend_prevalidates_then_commits_same_patch():
