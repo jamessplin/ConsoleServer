@@ -12,6 +12,7 @@ This module provides the SONiC integration layer used by config/show/REST:
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import pwd
@@ -205,6 +206,226 @@ class UserBackend(Protocol):
 
     def delete(self, username: str) -> None:
         ...
+
+
+
+class SonicConfigDbBackend:
+    """Production ConfigDB backend using Generic Config Updater.
+
+    ``prevalidate()`` builds one JSON patch for the complete candidate state
+    and runs GenericUpdater with ``dry_run=True``. ``commit()`` then applies
+    that exact prepared patch with ``dry_run=False``.
+
+    SONiC-specific imports are intentionally delayed until construction or
+    method execution so isolated unit tests can import this module without a
+    full SONiC runtime environment.
+    """
+
+    def __init__(
+        self,
+        *,
+        scope: str | None = None,
+        config_db: Any | None = None,
+        updater_factory: Any | None = None,
+        config_loader: Any | None = None,
+        patch_builder: Any | None = None,
+        config_format: Any | None = None,
+    ) -> None:
+        if scope is None:
+            from sonic_py_common import multi_asic
+
+            scope = multi_asic.DEFAULT_NAMESPACE
+
+        if config_db is None:
+            from swsscommon.swsscommon import ConfigDBConnector
+
+            config_db = ConfigDBConnector(
+                use_unix_socket_path=True,
+                namespace=scope,
+            )
+            config_db.connect()
+
+        if updater_factory is None:
+            from generic_config_updater.generic_updater import GenericUpdater
+
+            updater_factory = GenericUpdater
+
+        if config_loader is None:
+            from generic_config_updater.gu_common import get_config_db_as_json
+
+            config_loader = get_config_db_as_json
+
+        if patch_builder is None:
+            def patch_builder(current: Mapping[str, Any], candidate: Mapping[str, Any]):
+                import jsonpatch
+
+                return jsonpatch.make_patch(current, candidate)
+
+        if config_format is None:
+            from generic_config_updater.generic_updater import ConfigFormat
+
+            config_format = ConfigFormat.CONFIGDB
+
+        self._scope = scope
+        self._config_db = config_db
+        self._updater_factory = updater_factory
+        self._config_loader = config_loader
+        self._patch_builder = patch_builder
+        self._config_format = config_format
+
+        self._prepared_signature: tuple[Any, ...] | None = None
+        self._prepared_patch: Any | None = None
+
+    def get_table(
+        self,
+        table: str,
+    ) -> Mapping[str, Mapping[str, Any]]:
+        return self._config_db.get_table(table) or {}
+
+    def get_entry(
+        self,
+        table: str,
+        key: str,
+    ) -> Mapping[str, Any]:
+        return self._config_db.get_entry(table, key) or {}
+
+    @staticmethod
+    def _stringify_fields(fields: Mapping[str, Any]) -> dict[str, str]:
+        return {
+            str(field): str(value)
+            for field, value in fields.items()
+        }
+
+    @staticmethod
+    def _operation_signature(
+        operations: Sequence[ConfigDbOperation],
+    ) -> tuple[Any, ...]:
+        signature: list[tuple[Any, ...]] = []
+
+        for operation in operations:
+            fields = None
+            if operation.fields is not None:
+                fields = tuple(
+                    sorted(
+                        (str(field), str(value))
+                        for field, value in operation.fields.items()
+                    )
+                )
+
+            signature.append(
+                (
+                    operation.action,
+                    operation.table,
+                    operation.key,
+                    fields,
+                )
+            )
+
+        return tuple(signature)
+
+    def _build_patch(
+        self,
+        operations: Sequence[ConfigDbOperation],
+    ) -> Any:
+        current_config = self._config_loader(self._scope)
+        candidate_config = copy.deepcopy(current_config)
+
+        for operation in operations:
+            if operation.action == "set":
+                assert operation.fields is not None
+                table = candidate_config.setdefault(operation.table, {})
+                table[operation.key] = self._stringify_fields(operation.fields)
+                continue
+
+            if operation.action == "delete":
+                table = candidate_config.get(operation.table)
+                if table is None:
+                    continue
+                table.pop(operation.key, None)
+                if not table:
+                    candidate_config.pop(operation.table, None)
+                continue
+
+            raise ValueError(
+                f"Unsupported ConfigDB operation '{operation.action}'"
+            )
+
+        return self._patch_builder(current_config, candidate_config)
+
+    def _apply_patch(self, patch: Any, *, dry_run: bool) -> None:
+        result = self._updater_factory().apply_patch(
+            patch=patch,
+            config_format=self._config_format,
+            verbose=False,
+            dry_run=dry_run,
+            ignore_non_yang_tables=False,
+            ignore_paths=None,
+            sort=False,
+        )
+
+        if result not in (None, 0):
+            phase = "validation" if dry_run else "commit"
+            raise ConfigDbTransactionError(
+                f"ConfigDB {phase} failed with result {result}"
+            )
+
+    def prevalidate(
+        self,
+        operations: Sequence[ConfigDbOperation],
+    ) -> None:
+        if not operations:
+            raise ConfigDbValidationError(
+                "At least one ConfigDB operation is required"
+            )
+
+        signature = self._operation_signature(operations)
+        patch = self._build_patch(operations)
+
+        try:
+            self._apply_patch(patch, dry_run=True)
+        except Exception as error:
+            self._prepared_signature = None
+            self._prepared_patch = None
+
+            if isinstance(error, ConfigDbValidationError):
+                raise
+
+            raise ConfigDbValidationError(
+                f"ConfigDB candidate validation failed: {error}"
+            ) from error
+
+        self._prepared_signature = signature
+        self._prepared_patch = patch
+
+    def commit(
+        self,
+        operations: Sequence[ConfigDbOperation],
+    ) -> None:
+        signature = self._operation_signature(operations)
+
+        if (
+            self._prepared_patch is None
+            or self._prepared_signature != signature
+        ):
+            raise ConfigDbTransactionError(
+                "ConfigDB operations were not prevalidated, or the "
+                "operations changed after prevalidation"
+            )
+
+        patch = self._prepared_patch
+
+        try:
+            self._apply_patch(patch, dry_run=False)
+        except Exception as error:
+            if isinstance(error, ConfigDbTransactionError):
+                raise
+
+            raise ConfigDbTransactionError(
+                f"ConfigDB commit failed: {error}"
+            ) from error
+        finally:
+            self._prepared_signature = None
+            self._prepared_patch = None
 
 
 class SubprocessStatusBackend:

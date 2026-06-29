@@ -10,11 +10,13 @@ from sonic_console_server_manager.manager import (
     PORT_TABLE,
     ConfigDbOperation,
     ConfigDbTransactionError,
+    ConfigDbValidationError,
     DuplicatePortLabel,
     InvalidConsolePort,
     InvalidPortExpression,
     PasswordRequired,
     ReservedPortLabelConflict,
+    SonicConfigDbBackend,
     SonicConsoleServerManager,
     build_port_config,
     normalize_port_label,
@@ -260,3 +262,131 @@ def test_config_db_operation_contract():
         ConfigDbOperation("set", "T", "K", None)
     with pytest.raises(ValueError):
         ConfigDbOperation("delete", "T", "K", {})
+
+
+class FakeRawConfigDb:
+    def __init__(self, tables=None):
+        self.tables = deepcopy(tables or {})
+
+    def get_table(self, table):
+        return deepcopy(self.tables.get(table, {}))
+
+    def get_entry(self, table, key):
+        return deepcopy(self.tables.get(table, {}).get(key, {}))
+
+
+class FakeGenericUpdater:
+    def __init__(self, calls, results=None):
+        self.calls = calls
+        self.results = list(results or [])
+
+    def apply_patch(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.results:
+            result = self.results.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+        return None
+
+
+def make_sonic_config_db_backend(initial_config, *, updater_results=None):
+    calls = []
+    patches = []
+    updater = FakeGenericUpdater(calls, updater_results)
+
+    def config_loader(scope):
+        assert scope == "host"
+        return deepcopy(initial_config)
+
+    def patch_builder(current, candidate):
+        patch = {
+            "current": deepcopy(current),
+            "candidate": deepcopy(candidate),
+        }
+        patches.append(patch)
+        return patch
+
+    backend = SonicConfigDbBackend(
+        scope="host",
+        config_db=FakeRawConfigDb(initial_config),
+        updater_factory=lambda: updater,
+        config_loader=config_loader,
+        patch_builder=patch_builder,
+        config_format="CONFIGDB",
+    )
+    return backend, calls, patches
+
+
+def test_sonic_config_db_backend_prevalidates_then_commits_same_patch():
+    backend, calls, patches = make_sonic_config_db_backend(
+        {PORT_TABLE: {"1": {"label": "COM1", "baudrate": "9600"}}}
+    )
+    operations = [
+        ConfigDbOperation(
+            "set",
+            PORT_TABLE,
+            "1",
+            {"label": "COM1", "baudrate": 115200},
+        )
+    ]
+
+    backend.prevalidate(operations)
+    backend.commit(operations)
+
+    assert len(patches) == 1
+    assert patches[0]["candidate"][PORT_TABLE]["1"] == {
+        "label": "COM1",
+        "baudrate": "115200",
+    }
+    assert [call["dry_run"] for call in calls] == [True, False]
+    assert calls[0]["patch"] is calls[1]["patch"]
+    assert all(call["config_format"] == "CONFIGDB" for call in calls)
+
+
+def test_sonic_config_db_backend_builds_combined_set_delete_candidate():
+    backend, calls, patches = make_sonic_config_db_backend(
+        {
+            GROUP_PORT_TABLE: {
+                "ops|1": {},
+                "ops|2": {},
+            }
+        }
+    )
+    operations = [
+        ConfigDbOperation("delete", GROUP_PORT_TABLE, "ops|1"),
+        ConfigDbOperation("set", GROUP_PORT_TABLE, "ops|3", {}),
+    ]
+
+    backend.prevalidate(operations)
+
+    assert set(patches[0]["candidate"][GROUP_PORT_TABLE]) == {
+        "ops|2",
+        "ops|3",
+    }
+    assert calls[0]["dry_run"] is True
+
+
+def test_sonic_config_db_backend_rejects_changed_operations_at_commit():
+    backend, _, _ = make_sonic_config_db_backend({})
+    validated = [ConfigDbOperation("set", "T", "K", {"f": "one"})]
+    changed = [ConfigDbOperation("set", "T", "K", {"f": "two"})]
+
+    backend.prevalidate(validated)
+
+    with pytest.raises(ConfigDbTransactionError):
+        backend.commit(changed)
+
+
+def test_sonic_config_db_backend_wraps_dry_run_failure():
+    backend, _, _ = make_sonic_config_db_backend(
+        {},
+        updater_results=[ValueError("CVL rejected candidate")],
+    )
+    operations = [ConfigDbOperation("set", "T", "K", {"f": "v"})]
+
+    with pytest.raises(ConfigDbValidationError, match="CVL rejected candidate"):
+        backend.prevalidate(operations)
+
+    with pytest.raises(ConfigDbTransactionError):
+        backend.commit(operations)

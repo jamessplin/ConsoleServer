@@ -20,3 +20,11 @@ src/sonic-utilities/tests/
     └── test_manager.py
 
 setup_py_change.txt
+
+cd ~/git/ConsoleServer/sonic/sonic-utilities
+PYTHONPATH=. python3 -m pytest -v \
+    --confcutdir=tests/sonic_console_server_manager \
+    tests/sonic_console_server_manager/test_manager.py
+
+docker start james_test_env
+docker exec -it james_test_env bash
