@@ -205,13 +205,15 @@ def test_set_port_config_rolls_back_runtime_on_commit_failure():
 
 
 def test_set_group_ports_replaces_mapping():
+    events = []
     db = FakeConfigDb(
         {
             GROUP_TABLE: {"ops": {"role": "operator"}},
             GROUP_PORT_TABLE: {"ops|1": {}, "ops|2": {}},
-        }
+        },
+        events=events,
     )
-    status = FakeStatus()
+    status = FakeStatus(events=events)
     manager = SonicConsoleServerManager(
         config_db=db,
         port_provider=FakePortProvider({1, 2, 3}),
@@ -220,6 +222,8 @@ def test_set_group_ports_replaces_mapping():
     )
 
     manager.set_group_ports("ops", "2-3")
+
+    assert events == ["prevalidate", "status", "commit"]
     assert set(db.tables[GROUP_PORT_TABLE]) == {"ops|2", "ops|3"}
     assert status.calls == [["config-group", "ops", "--ports", "2,3"]]
 
