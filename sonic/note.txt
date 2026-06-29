@@ -7,3 +7,16 @@ sonic/src/sonic-yang-models$
 
 
 cp tests/yang_model_tests/test_yang_model.py tests/yang_model_tests/test_yang_model_bak.py
+
+
+
+
+src/sonic-utilities/sonic_console_server_manager/
+├── __init__.py
+└── manager.py
+
+src/sonic-utilities/tests/
+└── sonic_console_server_manager/
+    └── test_manager.py
+
+setup_py_change.txt
