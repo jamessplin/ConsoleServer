@@ -1,0 +1,251 @@
+{
+    "CONSOLE_SERVER_VALID_CONFIG": {
+        "sonic-console-server:sonic-console-server": {
+            "sonic-console-server:CONSOLE_SERVER_PORT": {
+                "CONSOLE_SERVER_PORT_LIST": [
+                    {
+                        "port": 1,
+                        "baudrate": 115200,
+                        "databits": 8,
+                        "parity": "none",
+                        "stopbits": 1,
+                        "flowcontrol": "none",
+                        "mode": "shared",
+                        "max_clients": 4,
+                        "idle_timeout": 600,
+                        "label": "COM1"
+                    },
+                    {
+                        "port": 2,
+                        "baudrate": 9600,
+                        "databits": 7,
+                        "parity": "even",
+                        "stopbits": 2,
+                        "flowcontrol": "rtscts",
+                        "mode": "exclusive",
+                        "max_clients": 1,
+                        "idle_timeout": 0,
+                        "label": "BackupConsole"
+                    }
+                ]
+            },
+            "sonic-console-server:CONSOLE_SERVER_GROUP": {
+                "CONSOLE_SERVER_GROUP_LIST": [
+                    {
+                        "groupname": "Group_A",
+                        "role": "console_user"
+                    }
+                ]
+            },
+            "sonic-console-server:CONSOLE_SERVER_GROUP_PORT": {
+                "CONSOLE_SERVER_GROUP_PORT_LIST": [
+                    {
+                        "groupname": "Group_A",
+                        "port": 1
+                    },
+                    {
+                        "groupname": "Group_A",
+                        "port": 2
+                    }
+                ]
+            },
+            "sonic-console-server:CONSOLE_SERVER_USER": {
+                "CONSOLE_SERVER_USER_LIST": [
+                    {
+                        "username": "tech1",
+                        "role": "console_user"
+                    }
+                ]
+            },
+            "sonic-console-server:CONSOLE_SERVER_USER_GROUP": {
+                "CONSOLE_SERVER_USER_GROUP_LIST": [
+                    {
+                        "username": "tech1",
+                        "groupname": "Group_A"
+                    }
+                ]
+            }
+        }
+    },
+    "CONSOLE_SERVER_VALID_DEFAULTED_PORT": {
+        "sonic-console-server:sonic-console-server": {
+            "sonic-console-server:CONSOLE_SERVER_PORT": {
+                "CONSOLE_SERVER_PORT_LIST": [
+                    {
+                        "port": 3
+                    }
+                ]
+            }
+        }
+    },
+    "CONSOLE_SERVER_INVALID_BAUDRATE": {
+        "sonic-console-server:sonic-console-server": {
+            "sonic-console-server:CONSOLE_SERVER_PORT": {
+                "CONSOLE_SERVER_PORT_LIST": [
+                    {
+                        "port": 1,
+                        "baudrate": 10000,
+                        "label": "COM1"
+                    }
+                ]
+            }
+        }
+    },
+    "CONSOLE_SERVER_INVALID_PORT_ZERO": {
+        "sonic-console-server:sonic-console-server": {
+            "sonic-console-server:CONSOLE_SERVER_PORT": {
+                "CONSOLE_SERVER_PORT_LIST": [
+                    {
+                        "port": 0,
+                        "label": "COM0"
+                    }
+                ]
+            }
+        }
+    },
+    "CONSOLE_SERVER_INVALID_PORT_257": {
+        "sonic-console-server:sonic-console-server": {
+            "sonic-console-server:CONSOLE_SERVER_PORT": {
+                "CONSOLE_SERVER_PORT_LIST": [
+                    {
+                        "port": 257,
+                        "label": "COM257"
+                    }
+                ]
+            }
+        }
+    },
+    "CONSOLE_SERVER_INVALID_IDLE_TIMEOUT": {
+        "sonic-console-server:sonic-console-server": {
+            "sonic-console-server:CONSOLE_SERVER_PORT": {
+                "CONSOLE_SERVER_PORT_LIST": [
+                    {
+                        "port": 1,
+                        "idle_timeout": 86401,
+                        "label": "COM1"
+                    }
+                ]
+            }
+        }
+    },
+    "CONSOLE_SERVER_EMPTY_LABEL": {
+        "sonic-console-server:sonic-console-server": {
+            "sonic-console-server:CONSOLE_SERVER_PORT": {
+                "CONSOLE_SERVER_PORT_LIST": [
+                    {
+                        "port": 1,
+                        "label": ""
+                    }
+                ]
+            }
+        }
+    },
+    "CONSOLE_SERVER_LONG_LABEL": {
+        "sonic-console-server:sonic-console-server": {
+            "sonic-console-server:CONSOLE_SERVER_PORT": {
+                "CONSOLE_SERVER_PORT_LIST": [
+                    {
+                        "port": 1,
+                        "label": "ConsoleLabelTooLong"
+                    }
+                ]
+            }
+        }
+    },
+    "CONSOLE_SERVER_DUPLICATE_LABEL": {
+        "sonic-console-server:sonic-console-server": {
+            "sonic-console-server:CONSOLE_SERVER_PORT": {
+                "CONSOLE_SERVER_PORT_LIST": [
+                    {
+                        "port": 1,
+                        "label": "SharedLabel"
+                    },
+                    {
+                        "port": 2,
+                        "label": "SharedLabel"
+                    }
+                ]
+            }
+        }
+    },
+    "CONSOLE_SERVER_GROUP_PORT_MISSING_GROUP": {
+        "sonic-console-server:sonic-console-server": {
+            "sonic-console-server:CONSOLE_SERVER_PORT": {
+                "CONSOLE_SERVER_PORT_LIST": [
+                    {
+                        "port": 1,
+                        "label": "COM1"
+                    }
+                ]
+            },
+            "sonic-console-server:CONSOLE_SERVER_GROUP_PORT": {
+                "CONSOLE_SERVER_GROUP_PORT_LIST": [
+                    {
+                        "groupname": "MissingGroup",
+                        "port": 1
+                    }
+                ]
+            }
+        }
+    },
+    "CONSOLE_SERVER_GROUP_PORT_MISSING_PORT": {
+        "sonic-console-server:sonic-console-server": {
+            "sonic-console-server:CONSOLE_SERVER_GROUP": {
+                "CONSOLE_SERVER_GROUP_LIST": [
+                    {
+                        "groupname": "Group_A",
+                        "role": "console_user"
+                    }
+                ]
+            },
+            "sonic-console-server:CONSOLE_SERVER_GROUP_PORT": {
+                "CONSOLE_SERVER_GROUP_PORT_LIST": [
+                    {
+                        "groupname": "Group_A",
+                        "port": 99
+                    }
+                ]
+            }
+        }
+    },
+    "CONSOLE_SERVER_USER_GROUP_MISSING_USER": {
+        "sonic-console-server:sonic-console-server": {
+            "sonic-console-server:CONSOLE_SERVER_GROUP": {
+                "CONSOLE_SERVER_GROUP_LIST": [
+                    {
+                        "groupname": "Group_A",
+                        "role": "console_user"
+                    }
+                ]
+            },
+            "sonic-console-server:CONSOLE_SERVER_USER_GROUP": {
+                "CONSOLE_SERVER_USER_GROUP_LIST": [
+                    {
+                        "username": "missing_user",
+                        "groupname": "Group_A"
+                    }
+                ]
+            }
+        }
+    },
+    "CONSOLE_SERVER_USER_GROUP_MISSING_GROUP": {
+        "sonic-console-server:sonic-console-server": {
+            "sonic-console-server:CONSOLE_SERVER_USER": {
+                "CONSOLE_SERVER_USER_LIST": [
+                    {
+                        "username": "tech1",
+                        "role": "console_user"
+                    }
+                ]
+            },
+            "sonic-console-server:CONSOLE_SERVER_USER_GROUP": {
+                "CONSOLE_SERVER_USER_GROUP_LIST": [
+                    {
+                        "username": "tech1",
+                        "groupname": "MissingGroup"
+                    }
+                ]
+            }
+        }
+    }
+}

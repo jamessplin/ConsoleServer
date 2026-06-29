@@ -1,0 +1,54 @@
+{
+    "CONSOLE_SERVER_VALID_CONFIG": {
+        "desc": "Configure valid console-server ports, groups, users, and mappings."
+    },
+    "CONSOLE_SERVER_VALID_DEFAULTED_PORT": {
+        "desc": "Configure a console-server port with only its key and rely on YANG defaults."
+    },
+    "CONSOLE_SERVER_INVALID_BAUDRATE": {
+        "desc": "Configure a console-server port with an unsupported baudrate.",
+        "eStrKey": "Range"
+    },
+    "CONSOLE_SERVER_INVALID_PORT_ZERO": {
+        "desc": "Configure console-server port 0.",
+        "eStrKey": "Range"
+    },
+    "CONSOLE_SERVER_INVALID_PORT_257": {
+        "desc": "Configure console-server port 257.",
+        "eStrKey": "Range"
+    },
+    "CONSOLE_SERVER_INVALID_IDLE_TIMEOUT": {
+        "desc": "Configure idle_timeout above 86400 seconds.",
+        "eStrKey": "Range"
+    },
+    "CONSOLE_SERVER_EMPTY_LABEL": {
+        "desc": "Configure an explicitly empty console-server port label.",
+        "eStrKey": "Length"
+    },
+    "CONSOLE_SERVER_LONG_LABEL": {
+        "desc": "Configure a console-server label longer than 16 characters.",
+        "eStrKey": "Length"
+    },
+    "CONSOLE_SERVER_DUPLICATE_LABEL": {
+        "desc": "Configure the same stored label on two console-server ports.",
+        "eStr": [
+            "Unique data leaf(s)"
+        ]
+    },
+    "CONSOLE_SERVER_GROUP_PORT_MISSING_GROUP": {
+        "desc": "Reference a nonexistent console-server group.",
+        "eStrKey": "LeafRef"
+    },
+    "CONSOLE_SERVER_GROUP_PORT_MISSING_PORT": {
+        "desc": "Reference a nonexistent console-server port.",
+        "eStrKey": "LeafRef"
+    },
+    "CONSOLE_SERVER_USER_GROUP_MISSING_USER": {
+        "desc": "Reference a nonexistent console-server user.",
+        "eStrKey": "LeafRef"
+    },
+    "CONSOLE_SERVER_USER_GROUP_MISSING_GROUP": {
+        "desc": "Reference a nonexistent group from a user-group mapping.",
+        "eStrKey": "LeafRef"
+    }
+}
