@@ -181,9 +181,13 @@ def test_set_port_config_prevalidates_calls_status_then_commits():
 
 
 def test_set_port_config_rolls_back_runtime_on_commit_failure():
-    db = FakeConfigDb({PORT_TABLE: {"1": {"label": "COM1", "baudrate": 9600}}})
+    events = []
+    db = FakeConfigDb(
+        {PORT_TABLE: {"1": {"label": "COM1", "baudrate": 9600}}},
+        events=events,
+    )
     db.fail_commit = True
-    status = FakeStatus()
+    status = FakeStatus(events=events)
     manager = SonicConsoleServerManager(
         config_db=db,
         port_provider=FakePortProvider({1}),
@@ -194,8 +198,9 @@ def test_set_port_config_rolls_back_runtime_on_commit_failure():
     with pytest.raises(ConfigDbTransactionError):
         manager.set_port_config(1, {"baudrate": 115200})
 
+    assert events == ["prevalidate", "status", "commit", "status"]
     assert status.calls[0] == ["config-port", "1", "--baudrate", "115200"]
-    assert status.calls[1][0:2] == ["config-port", "1"]
+    assert status.calls[1][:2] == ["config-port", "1"]
     assert "9600" in status.calls[1]
 
 
