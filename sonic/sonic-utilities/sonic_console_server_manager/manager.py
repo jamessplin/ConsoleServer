@@ -1215,6 +1215,24 @@ class SonicConsoleServerManager:
         return commands
 
 
+
+def create_default_manager(
+    *,
+    scope: str | None = None,
+    status_command: str = "/usr/local/bin/seriald-status",
+) -> SonicConsoleServerManager:
+    """Create the production SONiC ConsoleServer manager."""
+
+    config_db = SonicConfigDbBackend(scope=scope)
+
+    return SonicConsoleServerManager(
+        config_db=config_db,
+        port_provider=ConfigDbConsolePortProvider(config_db),
+        status_backend=SubprocessStatusBackend(status_command),
+        user_backend=NssUserBackend(),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Small internal helpers
 # ---------------------------------------------------------------------------

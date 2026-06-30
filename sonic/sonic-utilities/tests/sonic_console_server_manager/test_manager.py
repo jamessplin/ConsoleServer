@@ -4,6 +4,8 @@ from copy import deepcopy
 
 import pytest
 
+import sonic_console_server_manager.manager as manager_module
+
 from sonic_console_server_manager.manager import (
     GROUP_PORT_TABLE,
     GROUP_TABLE,
@@ -160,6 +162,49 @@ def make_sonic_config_db_backend(initial_config, *, updater_results=None):
         config_format="CONFIGDB",
     )
     return backend, calls, patches
+
+
+
+def test_create_default_manager_wires_production_backends(monkeypatch):
+    created = {}
+
+    class FakeProductionConfigDb:
+        def __init__(self, *, scope=None):
+            self.scope = scope
+            created["config_db"] = self
+
+    class FakeProductionPortProvider:
+        def __init__(self, config_db):
+            self.config_db = config_db
+            created["port_provider"] = self
+
+    class FakeProductionStatus:
+        def __init__(self, command):
+            self.command = command
+            created["status"] = self
+
+    class FakeProductionUsers:
+        def __init__(self):
+            created["users"] = self
+
+    monkeypatch.setattr(manager_module, "SonicConfigDbBackend", FakeProductionConfigDb)
+    monkeypatch.setattr(manager_module, "ConfigDbConsolePortProvider", FakeProductionPortProvider)
+    monkeypatch.setattr(manager_module, "SubprocessStatusBackend", FakeProductionStatus)
+    monkeypatch.setattr(manager_module, "NssUserBackend", FakeProductionUsers)
+
+    result = manager_module.create_default_manager(
+        scope="host",
+        status_command="/tmp/seriald-status",
+    )
+
+    assert isinstance(result, SonicConsoleServerManager)
+    assert created["config_db"].scope == "host"
+    assert created["port_provider"].config_db is created["config_db"]
+    assert created["status"].command == "/tmp/seriald-status"
+    assert result._config_db is created["config_db"]
+    assert result._port_provider is created["port_provider"]
+    assert result._status is created["status"]
+    assert result._users is created["users"]
 
 
 def test_config_db_console_port_provider_uses_port_table_keys():
