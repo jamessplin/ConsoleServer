@@ -428,6 +428,48 @@ class SonicConfigDbBackend:
             self._prepared_patch = None
 
 
+class ConfigDbConsolePortProvider:
+    """Discover valid console ports from ``CONSOLE_SERVER_PORT``.
+
+    The platform boot path is expected to create one baseline row for every
+    physical console port. The existing table keys therefore form the
+    authoritative inventory used by CLI validation.
+    """
+
+    def __init__(self, config_db: ConfigDbBackend) -> None:
+        self._config_db = config_db
+
+    def get_valid_ports(self) -> set[int]:
+        table = self._config_db.get_table(PORT_TABLE)
+        if not table:
+            raise InvalidConsolePort(
+                f"{PORT_TABLE} is empty or unavailable"
+            )
+
+        valid_ports: set[int] = set()
+        for key in table:
+            try:
+                port = int(key)
+            except (TypeError, ValueError) as exc:
+                raise InvalidConsolePort(
+                    f"Invalid key {key!r} in {PORT_TABLE}"
+                ) from exc
+
+            if port < 1:
+                raise InvalidConsolePort(
+                    f"Invalid console port {port} in {PORT_TABLE}"
+                )
+
+            if port in valid_ports:
+                raise InvalidConsolePort(
+                    f"Duplicate console port {port} in {PORT_TABLE}"
+                )
+
+            valid_ports.add(port)
+
+        return valid_ports
+
+
 class SubprocessStatusBackend:
     """Execute the generic ConsoleServer ``seriald-status`` command."""
 

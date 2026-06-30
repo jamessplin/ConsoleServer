@@ -8,6 +8,7 @@ from sonic_console_server_manager.manager import (
     GROUP_PORT_TABLE,
     GROUP_TABLE,
     PORT_TABLE,
+    ConfigDbConsolePortProvider,
     ConfigDbOperation,
     ConfigDbTransactionError,
     ConfigDbValidationError,
@@ -159,6 +160,48 @@ def make_sonic_config_db_backend(initial_config, *, updater_results=None):
         config_format="CONFIGDB",
     )
     return backend, calls, patches
+
+
+def test_config_db_console_port_provider_uses_port_table_keys():
+    provider = ConfigDbConsolePortProvider(
+        FakeRawConfigDb(
+            {
+                PORT_TABLE: {
+                    "1": {"label": "COM1"},
+                    "3": {"label": "COM3"},
+                    "8": {"label": "COM8"},
+                }
+            }
+        )
+    )
+
+    assert provider.get_valid_ports() == {1, 3, 8}
+
+
+def test_config_db_console_port_provider_rejects_missing_inventory():
+    provider = ConfigDbConsolePortProvider(FakeRawConfigDb())
+
+    with pytest.raises(InvalidConsolePort, match=PORT_TABLE):
+        provider.get_valid_ports()
+
+
+@pytest.mark.parametrize("key", ["tty1", "0", "-1"])
+def test_config_db_console_port_provider_rejects_invalid_keys(key):
+    provider = ConfigDbConsolePortProvider(
+        FakeRawConfigDb({PORT_TABLE: {key: {}}})
+    )
+
+    with pytest.raises(InvalidConsolePort):
+        provider.get_valid_ports()
+
+
+def test_config_db_console_port_provider_rejects_duplicate_numeric_keys():
+    provider = ConfigDbConsolePortProvider(
+        FakeRawConfigDb({PORT_TABLE: {"1": {}, "01": {}}})
+    )
+
+    with pytest.raises(InvalidConsolePort, match="Duplicate console port 1"):
+        provider.get_valid_ports()
 
 
 def test_parse_port_expression():
