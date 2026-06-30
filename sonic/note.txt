@@ -11,20 +11,74 @@ cp tests/yang_model_tests/test_yang_model.py tests/yang_model_tests/test_yang_mo
 
 
 
-src/sonic-utilities/sonic_console_server_manager/
-├── __init__.py
-└── manager.py
+src/sonic-utilities/
+├── setup.py
+├── config/
+│   ├── main.py
+│   └── console_server.py
+├── sonic_console_server_manager/
+│   ├── __init__.py
+│   └── manager.py
+└── tests/
+    └── sonic_console_server_manager/
+        ├── test_manager.py
+        └── test_console_server.py
 
-src/sonic-utilities/tests/
-└── sonic_console_server_manager/
-    └── test_manager.py
+The modified or added files are:
 
-setup_py_change.txt
+src/sonic-utilities/setup.py
+src/sonic-utilities/config/main.py
+src/sonic-utilities/config/console_server.py
+src/sonic-utilities/sonic_console_server_manager/__init__.py
+src/sonic-utilities/sonic_console_server_manager/manager.py
+src/sonic-utilities/tests/sonic_console_server_manager/test_manager.py
+src/sonic-utilities/tests/sonic_console_server_manager/test_console_server.py
+
+setup.py
+    Includes sonic_console_server_manager in the Python package list.
+
+config/main.py
+    Imports and registers the console-server command group.
+
+config/console_server.py
+    Implements the SONiC Click configuration commands.
+
+sonic_console_server_manager/__init__.py
+    Marks the manager directory as a Python package.
+
+sonic_console_server_manager/manager.py
+    Contains manager logic, production backends, port provider,
+    and create_default_manager().
+
+tests/sonic_console_server_manager/test_manager.py
+    Tests manager logic, backends, port provider, and factory wiring.
+
+tests/sonic_console_server_manager/test_console_server.py
+    Tests Click command parsing and CLI-to-manager calls.
+
 
 cd ~/git/ConsoleServer/sonic/sonic-utilities
 PYTHONPATH=. python3 -m pytest -v \
     --confcutdir=tests/sonic_console_server_manager \
     tests/sonic_console_server_manager/test_manager.py
+
+
+
+The relevant setup.py package list should include:
+
+packages=[
+    ...
+    "sonic_console_server_manager",
+    ...
+]
+
+
+PYTHONPATH=. python3 -m pytest -v \
+    --confcutdir=tests/sonic_console_server_manager \
+    tests/sonic_console_server_manager/test_manager.py \
+    tests/sonic_console_server_manager/test_console_server.py
+
+
 
 docker start james_test_env
 docker exec -it james_test_env bash
