@@ -35,6 +35,7 @@ class FakeConfigDb:
         self.tables = deepcopy(tables or {})
         self.prevalidated = []
         self.committed = []
+        self.direct_committed = []
         self.fail_commit = False
         self.events = events
 
@@ -55,6 +56,17 @@ class FakeConfigDb:
         if self.fail_commit:
             raise RuntimeError("commit failed")
         self.committed.append(list(operations))
+        self._apply_operations(operations)
+
+    def commit_direct(self, operations):
+        if self.events is not None:
+            self.events.append("direct_commit")
+        if self.fail_commit:
+            raise RuntimeError("commit failed")
+        self.direct_committed.append(list(operations))
+        self._apply_operations(operations)
+
+    def _apply_operations(self, operations):
         for operation in operations:
             table = self.tables.setdefault(operation.table, {})
             if operation.action == "delete":
@@ -113,12 +125,24 @@ class FakeUsers:
 class FakeRawConfigDb:
     def __init__(self, tables=None):
         self.tables = deepcopy(tables or {})
+        self.set_entry_calls = []
+        self.fail_set_entry = False
 
     def get_table(self, table):
         return deepcopy(self.tables.get(table, {}))
 
     def get_entry(self, table, key):
         return deepcopy(self.tables.get(table, {}).get(key, {}))
+
+    def set_entry(self, table, key, fields):
+        self.set_entry_calls.append((table, key, deepcopy(fields)))
+        if self.fail_set_entry:
+            raise RuntimeError("set_entry failed")
+        table_data = self.tables.setdefault(table, {})
+        if fields is None:
+            table_data.pop(key, None)
+        else:
+            table_data[key] = deepcopy(fields)
 
 
 class FakeGenericUpdater:
@@ -299,10 +323,10 @@ def test_build_port_config_materializes_complete_entry():
     )
     assert candidate["baudrate"] == 115200
     assert candidate["label"] == "COM1"
-    assert candidate["idle_timeout"] == 0
+    assert candidate["idle_timeout"] == 600
 
 
-def test_set_port_config_prevalidates_calls_status_then_commits():
+def test_set_port_config_uses_status_then_direct_commit():
     events = []
     db = FakeConfigDb(
         {PORT_TABLE: {"1": {"label": "COM1", "baudrate": 9600}}},
@@ -318,8 +342,9 @@ def test_set_port_config_prevalidates_calls_status_then_commits():
 
     manager.set_port_config(1, {"baudrate": 115200})
 
-    assert events == ["prevalidate", "status", "commit"]
-    assert db.prevalidated
+    assert events == ["status", "direct_commit"]
+    assert not db.prevalidated
+    assert db.direct_committed
     assert status.calls == [["config-port", "1", "--baudrate", "115200"]]
     assert db.tables[PORT_TABLE]["1"]["baudrate"] == 115200
 
@@ -342,7 +367,7 @@ def test_set_port_config_rolls_back_runtime_on_commit_failure():
     with pytest.raises(ConfigDbTransactionError):
         manager.set_port_config(1, {"baudrate": 115200})
 
-    assert events == ["prevalidate", "status", "commit", "status"]
+    assert events == ["status", "direct_commit", "status"]
     assert status.calls[0] == ["config-port", "1", "--baudrate", "115200"]
     assert status.calls[1][:2] == ["config-port", "1"]
     assert "9600" in status.calls[1]
@@ -404,6 +429,77 @@ def test_config_db_operation_contract():
         ConfigDbOperation("set", "T", "K", None)
     with pytest.raises(ValueError):
         ConfigDbOperation("delete", "T", "K", {})
+
+
+def test_sonic_config_db_backend_direct_commit_sets_complete_entry():
+    raw_db = FakeRawConfigDb(
+        {PORT_TABLE: {"1": {"label": "COM1", "baudrate": "9600"}}}
+    )
+    backend = SonicConfigDbBackend(
+        scope="host",
+        config_db=raw_db,
+        updater_factory=lambda: None,
+        config_loader=lambda scope: {},
+        patch_builder=lambda current, candidate: None,
+        config_format="CONFIGDB",
+    )
+
+    backend.commit_direct(
+        [
+            ConfigDbOperation(
+                "set",
+                PORT_TABLE,
+                "1",
+                {"label": "COM1", "baudrate": 115200},
+            )
+        ]
+    )
+
+    assert raw_db.set_entry_calls == [
+        (
+            PORT_TABLE,
+            "1",
+            {"label": "COM1", "baudrate": "115200"},
+        )
+    ]
+    assert raw_db.tables[PORT_TABLE]["1"]["baudrate"] == "115200"
+
+
+def test_sonic_config_db_backend_direct_commit_deletes_entry():
+    raw_db = FakeRawConfigDb({GROUP_PORT_TABLE: {"ops|1": {}}})
+    backend = SonicConfigDbBackend(
+        scope="host",
+        config_db=raw_db,
+        updater_factory=lambda: None,
+        config_loader=lambda scope: {},
+        patch_builder=lambda current, candidate: None,
+        config_format="CONFIGDB",
+    )
+
+    backend.commit_direct(
+        [ConfigDbOperation("delete", GROUP_PORT_TABLE, "ops|1")]
+    )
+
+    assert raw_db.set_entry_calls == [(GROUP_PORT_TABLE, "ops|1", None)]
+    assert "ops|1" not in raw_db.tables[GROUP_PORT_TABLE]
+
+
+def test_sonic_config_db_backend_direct_commit_wraps_write_failure():
+    raw_db = FakeRawConfigDb()
+    raw_db.fail_set_entry = True
+    backend = SonicConfigDbBackend(
+        scope="host",
+        config_db=raw_db,
+        updater_factory=lambda: None,
+        config_loader=lambda scope: {},
+        patch_builder=lambda current, candidate: None,
+        config_format="CONFIGDB",
+    )
+
+    with pytest.raises(ConfigDbTransactionError, match="set_entry failed"):
+        backend.commit_direct(
+            [ConfigDbOperation("set", PORT_TABLE, "1", {"baudrate": 9600})]
+        )
 
 
 def test_sonic_config_db_backend_prevalidates_then_commits_same_patch():

@@ -4,10 +4,11 @@ The generic ConsoleServer implementation is intentionally SONiC-agnostic.
 This module provides the SONiC integration layer used by config/show/REST:
 
 1. normalize and validate input;
-2. build and CVL-prevalidate the candidate ConfigDB operations;
+2. use feature-specific validation for interactive port updates;
 3. call the generic ``seriald-status`` command;
-4. commit the already validated ConfigDB operations;
-5. perform compensating runtime rollback when the final commit fails.
+4. commit port updates directly to ConfigDB;
+5. retain GCU/CVL for broader metadata transactions during migration;
+6. perform compensating runtime rollback when the final commit fails.
 """
 
 from __future__ import annotations
@@ -181,7 +182,10 @@ class ConfigDbBackend(Protocol):
         """Validate the complete candidate state through YANG/CVL."""
 
     def commit(self, operations: Sequence[ConfigDbOperation]) -> None:
-        """Atomically commit ConfigDB-only operations."""
+        """Commit prevalidated ConfigDB operations through GCU."""
+
+    def commit_direct(self, operations: Sequence[ConfigDbOperation]) -> None:
+        """Commit feature-validated operations directly to ConfigDB."""
 
 
 class PortProvider(Protocol):
@@ -426,6 +430,50 @@ class SonicConfigDbBackend:
         finally:
             self._prepared_signature = None
             self._prepared_patch = None
+
+    def commit_direct(
+        self,
+        operations: Sequence[ConfigDbOperation],
+    ) -> None:
+        """Commit manager-validated operations directly to ConfigDB.
+
+        This fast path is intended for interactive feature commands whose
+        complete candidate state has already been validated by the shared
+        console-server manager. It deliberately bypasses full-config GCU/CVL
+        validation while retaining consistent error mapping.
+        """
+
+        if not operations:
+            return
+
+        try:
+            for operation in operations:
+                if operation.action == "set":
+                    assert operation.fields is not None
+                    self._config_db.set_entry(
+                        operation.table,
+                        operation.key,
+                        self._stringify_fields(operation.fields),
+                    )
+                    continue
+
+                if operation.action == "delete":
+                    self._config_db.set_entry(
+                        operation.table,
+                        operation.key,
+                        None,
+                    )
+                    continue
+
+                raise ConfigDbTransactionError(
+                    f"Unsupported ConfigDB operation '{operation.action}'"
+                )
+        except Exception as error:
+            if isinstance(error, ConfigDbTransactionError):
+                raise
+            raise ConfigDbTransactionError(
+                f"Direct ConfigDB commit failed: {error}"
+            ) from error
 
 
 class ConfigDbConsolePortProvider:
@@ -810,7 +858,7 @@ def validate_local_user_exists(username: str) -> None:
 
 
 class SonicConsoleServerManager:
-    """Orchestrate status.py commands and SONiC ConfigDB/CVL updates."""
+    """Orchestrate seriald-status commands and SONiC ConfigDB updates."""
 
     def __init__(
         self,
@@ -860,9 +908,9 @@ class SonicConsoleServerManager:
             ConfigDbOperation("set", PORT_TABLE, str(port), candidate)
         ]
 
-        # CVL must run before changing the generic runtime.
-        self._prevalidate(operations)
-
+        # Port candidates are fully normalized and feature-validated by
+        # build_port_config(). Use the dedicated fast path instead of running
+        # full-config GCU/CVL validation for every interactive leaf update.
         runtime_commands = self._port_status_commands(port, updates)
         rollback_values = {
             key: (current.get(key) if key in current else candidate[key])
@@ -873,7 +921,7 @@ class SonicConsoleServerManager:
         for command in runtime_commands:
             self._run_status(command)
         try:
-            self._commit(operations)
+            self._commit_direct(operations)
         except Exception as original_error:
             try:
                 for command in reversed(rollback_commands):
@@ -1149,6 +1197,14 @@ class SonicConsoleServerManager:
         try:
             self._config_db.commit(operations)
         except Exception as exc:
+            raise ConfigDbTransactionError(str(exc)) from exc
+
+    def _commit_direct(self, operations: Sequence[ConfigDbOperation]) -> None:
+        try:
+            self._config_db.commit_direct(operations)
+        except Exception as exc:
+            if isinstance(exc, ConfigDbTransactionError):
+                raise
             raise ConfigDbTransactionError(str(exc)) from exc
 
     def _run_status(self, arguments: Sequence[str]) -> CommandResult:
