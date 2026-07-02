@@ -349,6 +349,62 @@ def test_set_port_config_uses_status_then_direct_commit():
     assert db.tables[PORT_TABLE]["1"]["baudrate"] == 115200
 
 
+def test_set_port_config_noop_skips_runtime_and_config_db_write():
+    events = []
+    db = FakeConfigDb(
+        {PORT_TABLE: {"1": {"label": "COM1", "baudrate": "9600"}}},
+        events=events,
+    )
+    status = FakeStatus(events=events)
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1}),
+        status_backend=status,
+        user_backend=FakeUsers(),
+    )
+
+    manager.set_port_config(1, {"baudrate": 9600})
+
+    assert events == []
+    assert status.calls == []
+    assert not db.prevalidated
+    assert not db.direct_committed
+    assert db.tables[PORT_TABLE]["1"]["baudrate"] == "9600"
+
+
+def test_set_port_config_sends_only_changed_runtime_fields():
+    events = []
+    db = FakeConfigDb(
+        {
+            PORT_TABLE: {
+                "1": {
+                    "label": "COM1",
+                    "baudrate": "9600",
+                    "parity": "none",
+                }
+            }
+        },
+        events=events,
+    )
+    status = FakeStatus(events=events)
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1}),
+        status_backend=status,
+        user_backend=FakeUsers(),
+    )
+
+    manager.set_port_config(
+        1,
+        {"baudrate": 9600, "parity": "even"},
+    )
+
+    assert events == ["status", "direct_commit"]
+    assert status.calls == [["config-port", "1", "--parity", "even"]]
+    assert db.tables[PORT_TABLE]["1"]["baudrate"] == 9600
+    assert db.tables[PORT_TABLE]["1"]["parity"] == "even"
+
+
 def test_set_port_config_rolls_back_runtime_on_commit_failure():
     events = []
     db = FakeConfigDb(

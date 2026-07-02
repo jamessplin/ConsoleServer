@@ -904,6 +904,14 @@ class SonicConsoleServerManager:
             valid_ports=valid_ports,
             existing_labels=labels,
         )
+        changed_updates = {
+            key: candidate[key]
+            for key in updates
+            if key not in current or str(current[key]) != str(candidate[key])
+        }
+        if not changed_updates:
+            return
+
         operations = [
             ConfigDbOperation("set", PORT_TABLE, str(port), candidate)
         ]
@@ -911,10 +919,12 @@ class SonicConsoleServerManager:
         # Port candidates are fully normalized and feature-validated by
         # build_port_config(). Use the dedicated fast path instead of running
         # full-config GCU/CVL validation for every interactive leaf update.
-        runtime_commands = self._port_status_commands(port, updates)
+        # Only send values that differ from ConfigDB to avoid unnecessary
+        # seriald reconfiguration and ConfigDB writes.
+        runtime_commands = self._port_status_commands(port, changed_updates)
         rollback_values = {
             key: (current.get(key) if key in current else candidate[key])
-            for key in updates
+            for key in changed_updates
         }
         rollback_commands = self._port_status_commands(port, rollback_values)
 
