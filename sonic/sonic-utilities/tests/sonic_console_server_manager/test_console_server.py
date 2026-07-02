@@ -28,6 +28,9 @@ class FakeManager:
         (["port", "stopbits", "4", "2"], (4, {"stopbits": 2})),
         (["port", "flowcontrol", "5", "rtscts"], (5, {"flowcontrol": "rtscts"})),
         (["port", "mode", "6", "shared"], (6, {"mode": "shared"})),
+        (["port", "max-clients", "7", "4"], (7, {"max_clients": 4})),
+        (["port", "idle-timeout", "8", "600"], (8, {"idle_timeout": 600})),
+        (["port", "label", "9", "RouterA"], (9, {"label": "RouterA"})),
     ],
 )
 def test_port_commands_call_shared_manager(monkeypatch, arguments, expected):

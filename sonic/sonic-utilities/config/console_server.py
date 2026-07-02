@@ -78,3 +78,30 @@ def mode(port_number: int, mode_value: str) -> None:
     """Set a console port access mode."""
 
     _set_port_config(port_number, "mode", mode_value)
+
+@port.command(name="max-clients")
+@click.argument("port_number", type=int)
+@click.argument("count", type=int)
+def max_clients(port_number: int, count: int) -> None:
+    """Set the maximum number of clients for a console port."""
+
+    _set_port_config(port_number, "max_clients", count)
+
+
+@port.command(name="idle-timeout")
+@click.argument("port_number", type=int)
+@click.argument("seconds", type=int)
+def idle_timeout(port_number: int, seconds: int) -> None:
+    """Set the console port idle timeout in seconds."""
+
+    _set_port_config(port_number, "idle_timeout", seconds)
+
+
+@port.command(name="label")
+@click.argument("port_number", type=int)
+@click.argument("label_value", metavar="LABEL")
+def label(port_number: int, label_value: str) -> None:
+    """Set a console port label."""
+
+    _set_port_config(port_number, "label", label_value)
+
