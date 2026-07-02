@@ -41,14 +41,14 @@ PORT_FIELDS = {
 }
 
 PORT_DEFAULTS: dict[str, Any] = {
-    "baudrate": 9600,
+    "baudrate": 115200,
     "databits": 8,
     "parity": "none",
     "stopbits": 1,
     "flowcontrol": "none",
-    "mode": "exclusive",
+    "mode": "shared",
     "max_clients": 1,
-    "idle_timeout": 0,
+    "idle_timeout": 600,
 }
 
 ALLOWED_BAUDRATES = {
@@ -360,7 +360,7 @@ class SonicConfigDbBackend:
             dry_run=dry_run,
             ignore_non_yang_tables=False,
             ignore_paths=None,
-            sort=False,
+            sort=True,
         )
 
         if result not in (None, 0):
