@@ -71,7 +71,8 @@ ALLOWED_PARITY = {"none", "even", "odd", "mark", "space"}
 ALLOWED_STOPBITS = {1, 2}
 ALLOWED_FLOWCONTROL = {"none", "rtscts", "xonxoff"}
 ALLOWED_MODES = {"exclusive", "shared"}
-ALLOWED_ROLES = {"admin", "console_user", "operator", "observer", "none"}
+GROUP_ALLOWED_ROLES = {"admin", "console_user", "operator"}
+USER_ALLOWED_ROLES = {"admin", "console_user", "operator", "none"}
 
 _RESERVED_LABEL_RE = re.compile(r"^COM([1-9][0-9]*)$", re.IGNORECASE)
 
@@ -953,11 +954,11 @@ class SonicConsoleServerManager:
         candidate = dict(current)
         if role is not None:
             normalized_role = str(role).lower()
-            if normalized_role not in ALLOWED_ROLES:
-                raise ConsoleServerManagerError(f"Unsupported role '{role}'")
+            if normalized_role not in GROUP_ALLOWED_ROLES:
+                raise ConsoleServerManagerError(f"Unsupported group role '{role}'")
             candidate["role"] = normalized_role
         if not candidate:
-            candidate["role"] = "none"
+            candidate["role"] = "console_user"
 
         operations = [ConfigDbOperation("set", GROUP_TABLE, name, candidate)]
         self._prevalidate(operations)
@@ -1067,8 +1068,8 @@ class SonicConsoleServerManager:
             raise PasswordRequired(PasswordRequired.code)
 
         normalized_role = None if role is None else str(role).lower()
-        if normalized_role is not None and normalized_role not in ALLOWED_ROLES:
-            raise ConsoleServerManagerError(f"Unsupported role '{role}'")
+        if normalized_role is not None and normalized_role not in USER_ALLOWED_ROLES:
+            raise ConsoleServerManagerError(f"Unsupported user role '{role}'")
 
         normalized_groups = None
         if groups is not None:

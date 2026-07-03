@@ -7,6 +7,7 @@ import pytest
 import sonic_console_server_manager.manager as manager_module
 
 from sonic_console_server_manager.manager import (
+    GROUP_ALLOWED_ROLES,
     GROUP_PORT_TABLE,
     GROUP_TABLE,
     PORT_TABLE,
@@ -15,12 +16,14 @@ from sonic_console_server_manager.manager import (
     ConfigDbTransactionError,
     ConfigDbValidationError,
     DuplicatePortLabel,
+    ConsoleServerManagerError,
     InvalidConsolePort,
     InvalidPortExpression,
     PasswordRequired,
     ReservedPortLabelConflict,
     SonicConfigDbBackend,
     SonicConsoleServerManager,
+    USER_ALLOWED_ROLES,
     build_port_config,
     normalize_port_label,
     parse_port_expression,
@@ -427,6 +430,42 @@ def test_set_port_config_rolls_back_runtime_on_commit_failure():
     assert status.calls[0] == ["config-port", "1", "--baudrate", "115200"]
     assert status.calls[1][:2] == ["config-port", "1"]
     assert "9600" in status.calls[1]
+
+
+def test_group_and_user_roles_match_yang_model():
+    assert GROUP_ALLOWED_ROLES == {"admin", "console_user", "operator"}
+    assert USER_ALLOWED_ROLES == {"admin", "console_user", "operator", "none"}
+
+
+def test_create_group_without_role_uses_yang_default_console_user():
+    events = []
+    db = FakeConfigDb(events=events)
+    status = FakeStatus(events=events)
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1}),
+        status_backend=status,
+        user_backend=FakeUsers(),
+    )
+
+    manager.create_or_update_group("ops")
+
+    assert events == ["prevalidate", "status", "commit"]
+    assert db.tables[GROUP_TABLE]["ops"] == {"role": "console_user"}
+    assert status.calls == [["config-group", "ops"]]
+
+
+@pytest.mark.parametrize("role", ["observer", "none"])
+def test_create_group_rejects_roles_not_supported_by_yang(role):
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(),
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        user_backend=FakeUsers(),
+    )
+
+    with pytest.raises(ConsoleServerManagerError, match="Unsupported group role"):
+        manager.create_or_update_group("ops", role=role)
 
 
 def test_set_group_ports_replaces_mapping():
