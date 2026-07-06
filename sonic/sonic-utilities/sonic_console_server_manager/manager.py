@@ -6,8 +6,8 @@ This module provides the SONiC integration layer used by config/show/REST:
 1. normalize and validate input;
 2. use feature-specific validation for interactive port updates;
 3. call the generic ``seriald-status`` command;
-4. commit port updates directly to ConfigDB;
-5. retain GCU/CVL for broader metadata transactions during migration;
+4. commit interactive port and group updates directly to ConfigDB;
+5. retain GCU/CVL for user metadata transactions during migration;
 6. perform compensating runtime rollback when the final commit fails.
 """
 
@@ -16,7 +16,6 @@ from __future__ import annotations
 import copy
 import json
 import os
-import pwd
 import re
 import subprocess
 from dataclasses import dataclass
@@ -71,10 +70,11 @@ ALLOWED_PARITY = {"none", "even", "odd", "mark", "space"}
 ALLOWED_STOPBITS = {1, 2}
 ALLOWED_FLOWCONTROL = {"none", "rtscts", "xonxoff"}
 ALLOWED_MODES = {"exclusive", "shared"}
-GROUP_ALLOWED_ROLES = {"admin", "console_user", "operator"}
-USER_ALLOWED_ROLES = {"admin", "console_user", "operator", "none"}
+ALLOWED_GROUP_ROLES = {"admin", "console_user", "operator"}
+ALLOWED_USER_ROLES = {"admin", "console_user", "operator", "none"}
 
 _RESERVED_LABEL_RE = re.compile(r"^COM([1-9][0-9]*)$", re.IGNORECASE)
+_USERNAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
 
 # ---------------------------------------------------------------------------
@@ -199,19 +199,9 @@ class StatusBackend(Protocol):
         ...
 
 
-class UserBackend(Protocol):
-    def exists(self, username: str) -> bool:
-        ...
-
-    def create(self, username: str, password: str) -> None:
-        ...
-
-    def set_password(self, username: str, password: str) -> None:
-        ...
-
-    def delete(self, username: str) -> None:
-        ...
-
+class ConsoleCliBackend(Protocol):
+    def run(self, arguments: Sequence[str]) -> CommandResult:
+        """Run the independent console-server application's CLI."""
 
 
 class SonicConfigDbBackend:
@@ -546,36 +536,30 @@ class SubprocessStatusBackend:
         )
 
 
-class NssUserBackend:
-    """Default Linux/NSS backend.
+class SubprocessConsoleCliBackend:
+    """Invoke the independent console-server application's public CLI.
 
-    Account-changing commands are injected so deployments can replace them with
-    platform-specific implementations. Passwords are supplied through stdin to
-    ``chpasswd`` and are never placed in argv.
+    Passwords are passed through argv because this is the only interface
+    currently supported by ``console-cli``. Never log full arguments.
     """
 
-    def exists(self, username: str) -> bool:
-        return local_user_exists(username)
+    def __init__(self, command: str = "/usr/local/bin/console-cli") -> None:
+        self._command = command
 
-    def create(self, username: str, password: str) -> None:
-        subprocess.run(["useradd", "--create-home", username], check=True)
-        try:
-            self.set_password(username, password)
-        except Exception:
-            subprocess.run(["userdel", "--remove", username], check=False)
-            raise
-
-    def set_password(self, username: str, password: str) -> None:
-        subprocess.run(
-            ["chpasswd"],
-            input=f"{username}:{password}\n",
-            text=True,
-            check=True,
+    def run(self, arguments: Sequence[str]) -> CommandResult:
+        if not os.path.exists(self._command):
+            raise ConsoleServerCommandError(f"{self._command} not found")
+        completed = subprocess.run(
+            [self._command, *map(str, arguments)],
+            check=False,
             capture_output=True,
+            text=True,
         )
-
-    def delete(self, username: str) -> None:
-        subprocess.run(["userdel", "--remove", username], check=True)
+        return CommandResult(
+            returncode=completed.returncode,
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -838,19 +822,30 @@ def build_port_config(
     return candidate
 
 
-def local_user_exists(username: str) -> bool:
-    """Return whether a username exists through the configured NSS backend."""
 
-    try:
-        pwd.getpwnam(username)
-        return True
-    except KeyError:
-        return False
+def normalize_username(username: str) -> str:
+    """Normalize and validate a username against the YANG model."""
+
+    name = _normalize_name(username, "username")
+    if not 1 <= len(name) <= 32:
+        raise ConsoleServerManagerError(
+            "username length must be between 1 and 32"
+        )
+    if not _USERNAME_RE.fullmatch(name):
+        raise ConsoleServerManagerError(
+            "username must match [A-Za-z_][A-Za-z0-9_-]*"
+        )
+    return name
 
 
-def validate_local_user_exists(username: str) -> None:
-    if not local_user_exists(username):
-        raise LocalUserNotFound(f"Local user '{username}' does not exist")
+def validate_password(password: str) -> None:
+    """Validate password length without exposing its value."""
+
+    if not isinstance(password, str) or not 1 <= len(password) <= 128:
+        raise PasswordRequired(
+            "password length must be between 1 and 128"
+        )
+
 
 
 # ---------------------------------------------------------------------------
@@ -867,12 +862,12 @@ class SonicConsoleServerManager:
         config_db: ConfigDbBackend,
         port_provider: PortProvider,
         status_backend: StatusBackend,
-        user_backend: UserBackend | None = None,
+        console_cli_backend: ConsoleCliBackend,
     ) -> None:
         self._config_db = config_db
         self._port_provider = port_provider
         self._status = status_backend
-        self._users = user_backend or NssUserBackend()
+        self._console_cli = console_cli_backend
 
     def get_valid_ports(self) -> set[int]:
         ports = set(self._port_provider.get_valid_ports())
@@ -943,20 +938,132 @@ class SonicConsoleServerManager:
                 ) from original_error
             raise
 
+    def set_group_config(
+        self,
+        group_name: str,
+        *,
+        role: str = "console_user",
+        ports: str,
+    ) -> None:
+        """Create or replace one group through the interactive fast path.
+
+        Group role and port membership are validated before runtime is changed.
+        Runtime receives one combined command, followed by one direct ConfigDB
+        batch. If the ConfigDB batch fails, runtime is restored to its previous
+        state.
+        """
+
+        name = _normalize_name(group_name, "group name")
+        normalized_role = str(role).lower()
+        if normalized_role not in ALLOWED_GROUP_ROLES:
+            raise ConsoleServerManagerError(f"Unsupported role '{role}'")
+
+        valid_ports = self.get_valid_ports()
+        candidate_ports = parse_port_expression(
+            ports,
+            all_ports=valid_ports,
+        )
+        validate_ports(candidate_ports, valid_ports=valid_ports)
+
+        current_group = dict(
+            self._config_db.get_entry(GROUP_TABLE, name)
+        )
+        current_role = str(
+            current_group.get("role", "console_user")
+        ).lower()
+
+        current_table = self._config_db.get_table(GROUP_PORT_TABLE)
+        current_keys: list[str] = []
+        current_ports: list[int] = []
+        for raw_key in current_table:
+            key_group, key_port = _decode_compound_key(
+                raw_key,
+                parts=2,
+                table=GROUP_PORT_TABLE,
+            )
+            if key_group != name:
+                continue
+
+            current_keys.append(
+                _encode_compound_key(key_group, key_port)
+            )
+            try:
+                current_ports.append(int(key_port))
+            except ValueError as error:
+                raise ConfigDbTransactionError(
+                    f"Invalid port {key_port!r} in {GROUP_PORT_TABLE}"
+                ) from error
+
+        current_ports.sort()
+        if (
+            current_group
+            and current_role == normalized_role
+            and current_ports == candidate_ports
+        ):
+            return
+
+        operations: list[ConfigDbOperation] = [
+            ConfigDbOperation(
+                "set",
+                GROUP_TABLE,
+                name,
+                {"role": normalized_role},
+            )
+        ]
+        operations.extend(
+            ConfigDbOperation("delete", GROUP_PORT_TABLE, key)
+            for key in current_keys
+        )
+        operations.extend(normalize_group_ports(name, candidate_ports))
+
+        self._run_status(
+            [
+                "config-group",
+                name,
+                "--role",
+                normalized_role,
+                "--ports",
+                _ports_csv(candidate_ports),
+            ]
+        )
+
+        try:
+            self._commit_direct(operations)
+        except Exception as original_error:
+            rollback = ["config-group", name]
+            if current_group:
+                rollback.extend(
+                    [
+                        "--role",
+                        current_role,
+                        "--ports",
+                        _ports_csv(current_ports),
+                    ]
+                )
+            else:
+                rollback = ["config-no-group", name]
+
+            self._rollback_status(rollback, original_error)
+            raise
+
     def create_or_update_group(
         self,
         group_name: str,
         *,
         role: str | None = None,
     ) -> None:
+        """Legacy metadata-only group API retained for non-CLI callers."""
+
         name = _normalize_name(group_name, "group name")
         current = dict(self._config_db.get_entry(GROUP_TABLE, name))
         candidate = dict(current)
+
         if role is not None:
             normalized_role = str(role).lower()
-            if normalized_role not in GROUP_ALLOWED_ROLES:
-                raise ConsoleServerManagerError(f"Unsupported group role '{role}'")
+            if normalized_role not in ALLOWED_GROUP_ROLES:
+                raise ConsoleServerManagerError(f"Unsupported role '{role}'")
             candidate["role"] = normalized_role
+
         if not candidate:
             candidate["role"] = "console_user"
 
@@ -979,50 +1086,63 @@ class SonicConsoleServerManager:
             raise
 
     def set_group_ports(self, group_name: str, expression: str) -> None:
-        name = _normalize_name(group_name, "group name")
-        if not self._config_db.get_entry(GROUP_TABLE, name):
-            raise ConsoleServerManagerError(f"Group '{name}' does not exist")
+        """Legacy port-membership API retained for non-CLI callers."""
 
-        valid_ports = self.get_valid_ports()
-        ports = parse_port_expression(expression, all_ports=valid_ports)
-        validate_ports(ports, valid_ports=valid_ports)
-
-        current_table = self._config_db.get_table(GROUP_PORT_TABLE)
-        current_ports = sorted(
-            int(key.split("|", 1)[1])
-            for key in current_table
-            if key.startswith(f"{name}|")
-        )
-
-        operations: list[ConfigDbOperation] = [
-            ConfigDbOperation("delete", GROUP_PORT_TABLE, key)
-            for key in current_table
-            if key.startswith(f"{name}|")
-        ]
-        operations.extend(normalize_group_ports(name, ports))
-        self._prevalidate(operations)
-
-        self._run_status(["config-group", name, "--ports", _ports_csv(ports)])
-        try:
-            self._commit(operations)
-        except Exception as original_error:
-            rollback = ["config-group", name, "--ports", _ports_csv(current_ports)]
-            self._rollback_status(rollback, original_error)
-            raise
-
-    def delete_group(self, group_name: str) -> None:
         name = _normalize_name(group_name, "group name")
         group = dict(self._config_db.get_entry(GROUP_TABLE, name))
-        group_ports = {
-            key: dict(fields)
-            for key, fields in self._config_db.get_table(GROUP_PORT_TABLE).items()
-            if key.startswith(f"{name}|")
-        }
-        user_groups = {
-            key: dict(fields)
-            for key, fields in self._config_db.get_table(USER_GROUP_TABLE).items()
-            if key.endswith(f"|{name}")
-        }
+        if not group:
+            raise ConsoleServerManagerError(f"Group '{name}' does not exist")
+
+        self.set_group_config(
+            name,
+            role=str(group.get("role", "console_user")),
+            ports=expression,
+        )
+
+    def delete_group(self, group_name: str) -> None:
+        """Delete a group and all mappings through the direct fast path."""
+
+        name = _normalize_name(group_name, "group name")
+        group = dict(self._config_db.get_entry(GROUP_TABLE, name))
+
+        group_ports: dict[str, dict[str, Any]] = {}
+        rollback_ports: list[int] = []
+        for raw_key, fields in self._config_db.get_table(
+            GROUP_PORT_TABLE
+        ).items():
+            key_group, key_port = _decode_compound_key(
+                raw_key,
+                parts=2,
+                table=GROUP_PORT_TABLE,
+            )
+            if key_group != name:
+                continue
+
+            canonical_key = _encode_compound_key(key_group, key_port)
+            group_ports[canonical_key] = dict(fields)
+            try:
+                rollback_ports.append(int(key_port))
+            except ValueError as error:
+                raise ConfigDbTransactionError(
+                    f"Invalid port {key_port!r} in {GROUP_PORT_TABLE}"
+                ) from error
+
+        user_groups: dict[str, dict[str, Any]] = {}
+        for raw_key, fields in self._config_db.get_table(
+            USER_GROUP_TABLE
+        ).items():
+            username, key_group = _decode_compound_key(
+                raw_key,
+                parts=2,
+                table=USER_GROUP_TABLE,
+            )
+            if key_group == name:
+                user_groups[
+                    _encode_compound_key(username, key_group)
+                ] = dict(fields)
+
+        if not group and not group_ports and not user_groups:
+            return
 
         operations: list[ConfigDbOperation] = [
             ConfigDbOperation("delete", USER_GROUP_TABLE, key)
@@ -1032,28 +1152,26 @@ class SonicConsoleServerManager:
             ConfigDbOperation("delete", GROUP_PORT_TABLE, key)
             for key in group_ports
         )
-        operations.append(ConfigDbOperation("delete", GROUP_TABLE, name))
-        self._prevalidate(operations)
+        operations.append(
+            ConfigDbOperation("delete", GROUP_TABLE, name)
+        )
 
         self._run_status(["config-no-group", name])
         try:
-            self._commit(operations)
+            self._commit_direct(operations)
         except Exception as original_error:
             rollback = ["config-group", name]
             if group.get("role") is not None:
-                rollback += ["--role", str(group["role"])]
-            ports = sorted(int(key.split("|", 1)[1]) for key in group_ports)
-            if ports:
-                rollback += ["--ports", _ports_csv(ports)]
+                rollback.extend(["--role", str(group["role"])])
+
+            rollback_ports.sort()
+            if rollback_ports:
+                rollback.extend(
+                    ["--ports", _ports_csv(rollback_ports)]
+                )
+
             self._rollback_status(rollback, original_error)
             raise
-
-    def local_user_exists(self, username: str) -> bool:
-        return self._users.exists(username)
-
-    def validate_local_user_exists(self, username: str) -> None:
-        if not self.local_user_exists(username):
-            raise LocalUserNotFound(f"Local user '{username}' does not exist")
 
     def set_user_config(
         self,
@@ -1062,36 +1180,29 @@ class SonicConsoleServerManager:
         role: str | None,
         groups: list[str] | None,
     ) -> None:
-        name = _normalize_name(username, "username")
-        exists = self._users.exists(name)
-        if not exists and password is None:
-            raise PasswordRequired(PasswordRequired.code)
+        name = normalize_username(username)
+        if password is not None:
+            validate_password(password)
 
         normalized_role = None if role is None else str(role).lower()
-        if normalized_role is not None and normalized_role not in USER_ALLOWED_ROLES:
-            raise ConsoleServerManagerError(f"Unsupported user role '{role}'")
+        if normalized_role is not None and normalized_role not in ALLOWED_USER_ROLES:
+            raise ConsoleServerManagerError(f"Unsupported role '{role}'")
 
         normalized_groups = None
         if groups is not None:
             normalized_groups = [_normalize_name(group, "group name") for group in groups]
             if len(set(normalized_groups)) != len(normalized_groups):
                 raise ConsoleServerManagerError("Duplicate group names are not allowed")
-            missing = [
-                group
-                for group in normalized_groups
-                if not self._config_db.get_entry(GROUP_TABLE, group)
-            ]
+            missing = [group for group in normalized_groups if not self._config_db.get_entry(GROUP_TABLE, group)]
             if missing:
-                raise ConsoleServerManagerError(
-                    "Unknown group(s): " + ", ".join(sorted(missing))
-                )
+                raise ConsoleServerManagerError("Unknown group(s): " + ", ".join(sorted(missing)))
 
         current_user = dict(self._config_db.get_entry(USER_TABLE, name))
-        current_user_groups = {
-            key: dict(fields)
-            for key, fields in self._config_db.get_table(USER_GROUP_TABLE).items()
-            if key.startswith(f"{name}|")
-        }
+        current_user_groups: dict[str, dict[str, Any]] = {}
+        for raw_key, fields in self._config_db.get_table(USER_GROUP_TABLE).items():
+            key_user, key_group = _decode_compound_key(raw_key, parts=2, table=USER_GROUP_TABLE)
+            if key_user == name:
+                current_user_groups[_encode_compound_key(key_user, key_group)] = dict(fields)
 
         candidate_user = dict(current_user)
         if normalized_role is not None:
@@ -1099,91 +1210,40 @@ class SonicConsoleServerManager:
         if not candidate_user:
             candidate_user["role"] = "none"
 
-        operations: list[ConfigDbOperation] = [
-            ConfigDbOperation("set", USER_TABLE, name, candidate_user)
-        ]
+        operations: list[ConfigDbOperation] = [ConfigDbOperation("set", USER_TABLE, name, candidate_user)]
         if normalized_groups is not None:
-            operations.extend(
-                ConfigDbOperation("delete", USER_GROUP_TABLE, key)
-                for key in current_user_groups
-            )
-            operations.extend(
-                ConfigDbOperation("set", USER_GROUP_TABLE, f"{name}|{group}", {})
-                for group in sorted(normalized_groups)
-            )
+            operations.extend(ConfigDbOperation("delete", USER_GROUP_TABLE, key) for key in current_user_groups)
+            operations.extend(ConfigDbOperation("set", USER_GROUP_TABLE, f"{name}|{group}", {}) for group in sorted(normalized_groups))
 
-        # Validate metadata before account/password changes.
-        self._prevalidate(operations)
-
-        created = False
-        if not exists:
-            assert password is not None
-            self._users.create(name, password)
-            created = True
-        elif password is not None:
-            # Password changes are not generally reversible. Candidate metadata
-            # is already CVL-valid before reaching this point.
-            self._users.set_password(name, password)
-
-        status_args = ["config-user", name]
+        arguments = ["config", "user", "add", name]
+        if password is not None:
+            arguments.extend(["--password", password])
         if normalized_role is not None:
-            status_args += ["--role", normalized_role]
+            arguments.extend(["--role", normalized_role])
         if normalized_groups is not None:
-            status_args += ["--groups", ",".join(normalized_groups)]
-        # Do not pass plaintext password through argv from this manager.
-        self._run_status(status_args)
-
-        try:
-            self._commit(operations)
-        except Exception:
-            if created:
-                try:
-                    self._users.delete(name)
-                except Exception:
-                    pass
-            raise
+            arguments.extend(["--groups", ",".join(normalized_groups)])
+        self._run_console_cli(arguments)
+        self._commit_direct(operations)
 
     def set_user_password(self, username: str, password: str) -> None:
-        name = _normalize_name(username, "username")
-        if not password:
-            raise PasswordRequired(PasswordRequired.code)
-        self.validate_local_user_exists(name)
-        self._users.set_password(name, password)
+        name = normalize_username(username)
+        validate_password(password)
+        self._run_console_cli(["config", "user", "add", name, "--password", password])
 
-    def delete_user(self, username: str, *, delete_linux_account: bool = True) -> None:
-        name = _normalize_name(username, "username")
+    def delete_user(self, username: str) -> None:
+        name = normalize_username(username)
         user = dict(self._config_db.get_entry(USER_TABLE, name))
-        mappings = {
-            key: dict(fields)
-            for key, fields in self._config_db.get_table(USER_GROUP_TABLE).items()
-            if key.startswith(f"{name}|")
-        }
-        operations: list[ConfigDbOperation] = [
-            ConfigDbOperation("delete", USER_GROUP_TABLE, key) for key in mappings
-        ]
+        mappings: dict[str, dict[str, Any]] = {}
+        for raw_key, fields in self._config_db.get_table(USER_GROUP_TABLE).items():
+            key_user, key_group = _decode_compound_key(raw_key, parts=2, table=USER_GROUP_TABLE)
+            if key_user == name:
+                mappings[_encode_compound_key(key_user, key_group)] = dict(fields)
+        if not user and not mappings:
+            return
+        operations: list[ConfigDbOperation] = [ConfigDbOperation("delete", USER_GROUP_TABLE, key) for key in mappings]
         operations.append(ConfigDbOperation("delete", USER_TABLE, name))
-        self._prevalidate(operations)
-
-        self._run_status(["config-no-user", name])
-        self._commit(operations)
-
-        if delete_linux_account and self._users.exists(name):
-            try:
-                self._users.delete(name)
-            except Exception as exc:
-                # Restore ConfigDB metadata when Linux deletion fails.
-                restore: list[ConfigDbOperation] = []
-                if user:
-                    restore.append(ConfigDbOperation("set", USER_TABLE, name, user))
-                restore.extend(
-                    ConfigDbOperation("set", USER_GROUP_TABLE, key, fields)
-                    for key, fields in mappings.items()
-                )
-                if restore:
-                    self._config_db.commit(restore)
-                raise ConsoleServerManagerError(
-                    f"Failed to delete Linux user '{name}': {exc}"
-                ) from exc
+        self._run_console_cli(["config", "user", "delete", name])
+        self._commit_direct(operations)
 
     # ---- private helpers -------------------------------------------------
 
@@ -1225,6 +1285,13 @@ class SonicConsoleServerManager:
             raise ConsoleServerCommandError(
                 detail or f"seriald-status command failed: {' '.join(arguments)}"
             )
+        return result
+
+    def _run_console_cli(self, arguments: Sequence[str]) -> CommandResult:
+        result = self._console_cli.run(arguments)
+        if result.returncode != 0:
+            detail = result.stderr.strip() or result.stdout.strip()
+            raise ConsoleServerCommandError(detail or "console-cli command failed")
         return result
 
     def _rollback_status(
@@ -1287,6 +1354,7 @@ def create_default_manager(
     *,
     scope: str | None = None,
     status_command: str = "/usr/local/bin/seriald-status",
+    console_cli_command: str = "/usr/local/bin/console-cli",
 ) -> SonicConsoleServerManager:
     """Create the production SONiC ConsoleServer manager."""
 
@@ -1296,13 +1364,42 @@ def create_default_manager(
         config_db=config_db,
         port_provider=ConfigDbConsolePortProvider(config_db),
         status_backend=SubprocessStatusBackend(status_command),
-        user_backend=NssUserBackend(),
+        console_cli_backend=SubprocessConsoleCliBackend(console_cli_command),
     )
 
 
 # ---------------------------------------------------------------------------
 # Small internal helpers
 # ---------------------------------------------------------------------------
+
+
+
+def _decode_compound_key(
+    key: Any,
+    *,
+    parts: int,
+    table: str,
+) -> tuple[str, ...]:
+    """Normalize ConfigDB compound keys returned as tuples or pipe strings.
+
+    ``ConfigDBConnector.get_table()`` may return multi-key table keys as
+    tuples, while JSON/GCU operations use the canonical ``a|b`` form.
+    """
+
+    if isinstance(key, (tuple, list)):
+        values = tuple(str(value) for value in key)
+    else:
+        values = tuple(str(key).split("|", parts - 1))
+
+    if len(values) != parts or any(not value for value in values):
+        raise ConfigDbTransactionError(
+            f"Invalid key {key!r} returned for {table}"
+        )
+    return values
+
+
+def _encode_compound_key(*parts: Any) -> str:
+    return "|".join(str(part) for part in parts)
 
 
 def _normalize_name(value: str, field: str) -> str:

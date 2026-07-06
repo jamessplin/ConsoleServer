@@ -132,8 +132,11 @@ def group_add(
 
     try:
         manager = create_default_manager()
-        manager.create_or_update_group(group_name, role=role)
-        manager.set_group_ports(group_name, port_list)
+        manager.set_group_config(
+            group_name,
+            role=role,
+            ports=port_list,
+        )
     except ConsoleServerManagerError as error:
         raise click.ClickException(str(error)) from error
 
@@ -146,6 +149,98 @@ def group_delete(group_name: str) -> None:
     try:
         manager = create_default_manager()
         manager.delete_group(group_name)
+    except ConsoleServerManagerError as error:
+        raise click.ClickException(str(error)) from error
+@console_server.group(name="user")
+def user() -> None:
+    """Configure console-server users."""
+
+
+def _parse_groups(value: str | None) -> list[str] | None:
+    if value is None:
+        return None
+
+    groups = [item.strip() for item in value.split(",")]
+    if not groups or any(not item for item in groups):
+        raise click.ClickException(
+            "GROUP_LIST must be a comma-separated list of non-empty names"
+        )
+    return groups
+
+
+def _prompt_password() -> str:
+    return click.prompt(
+        "Password",
+        hide_input=True,
+        confirmation_prompt=True,
+        type=str,
+    )
+
+
+@user.command(name="add")
+@click.argument("username")
+@click.option(
+    "--role",
+    type=click.Choice(
+        ["none", "admin", "console_user", "operator"],
+        case_sensitive=False,
+    ),
+    default="none",
+    show_default=True,
+)
+@click.option(
+    "--groups",
+    metavar="GROUP_LIST",
+    help="Comma-separated console-server group names.",
+)
+@click.option(
+    "--password",
+    "prompt_for_password",
+    is_flag=True,
+    help="Prompt securely to set or replace the Linux password.",
+)
+def user_add(
+    username: str,
+    role: str,
+    groups: str | None,
+    prompt_for_password: bool,
+) -> None:
+    """Create or update a console-server user."""
+
+    try:
+        manager = create_default_manager()
+        password = _prompt_password() if prompt_for_password else None
+
+        manager.set_user_config(
+            username,
+            password,
+            role,
+            _parse_groups(groups),
+        )
+    except ConsoleServerManagerError as error:
+        raise click.ClickException(str(error)) from error
+
+
+@user.command(name="password")
+@click.argument("username")
+def user_password(username: str) -> None:
+    """Set the password of an existing Linux user."""
+
+    try:
+        manager = create_default_manager()
+        manager.set_user_password(username, _prompt_password())
+    except ConsoleServerManagerError as error:
+        raise click.ClickException(str(error)) from error
+
+
+@user.command(name="delete")
+@click.argument("username")
+def user_delete(username: str) -> None:
+    """Delete a console-server user."""
+
+    try:
+        manager = create_default_manager()
+        manager.delete_user(username)
     except ConsoleServerManagerError as error:
         raise click.ClickException(str(error)) from error
 

@@ -1,4 +1,4 @@
-src/sonic-utilities/
+src/sonic-yang-models/
 ├── setup.py
 ├── tests
 │   └── yang_model_tests
@@ -82,3 +82,20 @@ tests/sonic_console_server_manager/test_console_server.py
 tests/sonic_console_server_manager/test_manager.py
 
 python3 -m py_compile manager.py
+
+for port in 1 2 3 4; do
+    sudo sonic-db-cli CONFIG_DB hmset \
+        "CONSOLE_SERVER_PORT|${port}" \
+        baudrate 115200 \
+        databits 8 \
+        parity none \
+        stopbits 1 \
+        flowcontrol none \
+        mode shared \
+        max_clients 1 \
+        idle_timeout 600 \
+        label "COM${port}"
+done
+
+ scp /home/james/tmp/manager.py admin@10.19.252.37:/tmp
+YourPaSsWoRd

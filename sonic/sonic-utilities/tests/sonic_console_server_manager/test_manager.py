@@ -7,7 +7,6 @@ import pytest
 import sonic_console_server_manager.manager as manager_module
 
 from sonic_console_server_manager.manager import (
-    GROUP_ALLOWED_ROLES,
     GROUP_PORT_TABLE,
     GROUP_TABLE,
     PORT_TABLE,
@@ -16,14 +15,13 @@ from sonic_console_server_manager.manager import (
     ConfigDbTransactionError,
     ConfigDbValidationError,
     DuplicatePortLabel,
-    ConsoleServerManagerError,
     InvalidConsolePort,
     InvalidPortExpression,
     PasswordRequired,
+    ConsoleServerManagerError,
     ReservedPortLabelConflict,
     SonicConfigDbBackend,
     SonicConsoleServerManager,
-    USER_ALLOWED_ROLES,
     build_port_config,
     normalize_port_label,
     parse_port_expression,
@@ -72,9 +70,22 @@ class FakeConfigDb:
     def _apply_operations(self, operations):
         for operation in operations:
             table = self.tables.setdefault(operation.table, {})
+            matching_keys = [
+                key
+                for key in table
+                if (
+                    "|".join(map(str, key))
+                    if isinstance(key, tuple)
+                    else str(key)
+                ) == operation.key
+            ]
             if operation.action == "delete":
                 table.pop(operation.key, None)
+                for key in matching_keys:
+                    table.pop(key, None)
             else:
+                for key in matching_keys:
+                    table.pop(key, None)
                 table[operation.key] = dict(operation.fields or {})
 
 
@@ -105,7 +116,7 @@ class FakeStatus:
         return CommandResult(0, "", "")
 
 
-class FakeUsers:
+class FakeUsers_OBSOLETE:
     def __init__(self, existing=()):
         self.existing = set(existing)
         self.calls = []
@@ -123,6 +134,22 @@ class FakeUsers:
     def delete(self, username):
         self.calls.append(("delete", username))
         self.existing.discard(username)
+
+
+class FakeConsoleCli:
+    def __init__(self, events=None):
+        self.calls = []
+        self.fail = False
+        self.events = events
+
+    def run(self, arguments):
+        self.calls.append(list(arguments))
+        if self.events is not None:
+            self.events.append("console_cli")
+        from sonic_console_server_manager.manager import CommandResult
+        if self.fail:
+            return CommandResult(1, "", "console-cli failed")
+        return CommandResult(0, "", "")
 
 
 class FakeRawConfigDb:
@@ -210,18 +237,20 @@ def test_create_default_manager_wires_production_backends(monkeypatch):
             self.command = command
             created["status"] = self
 
-    class FakeProductionUsers:
-        def __init__(self):
-            created["users"] = self
+    class FakeProductionConsoleCli:
+        def __init__(self, command):
+            self.command = command
+            created["console_cli"] = self
 
     monkeypatch.setattr(manager_module, "SonicConfigDbBackend", FakeProductionConfigDb)
     monkeypatch.setattr(manager_module, "ConfigDbConsolePortProvider", FakeProductionPortProvider)
     monkeypatch.setattr(manager_module, "SubprocessStatusBackend", FakeProductionStatus)
-    monkeypatch.setattr(manager_module, "NssUserBackend", FakeProductionUsers)
+    monkeypatch.setattr(manager_module, "SubprocessConsoleCliBackend", FakeProductionConsoleCli)
 
     result = manager_module.create_default_manager(
         scope="host",
         status_command="/tmp/seriald-status",
+        console_cli_command="/tmp/console-cli",
     )
 
     assert isinstance(result, SonicConsoleServerManager)
@@ -231,7 +260,7 @@ def test_create_default_manager_wires_production_backends(monkeypatch):
     assert result._config_db is created["config_db"]
     assert result._port_provider is created["port_provider"]
     assert result._status is created["status"]
-    assert result._users is created["users"]
+    assert result._console_cli is created["console_cli"]
 
 
 def test_config_db_console_port_provider_uses_port_table_keys():
@@ -340,7 +369,7 @@ def test_set_port_config_uses_status_then_direct_commit():
         config_db=db,
         port_provider=FakePortProvider({1}),
         status_backend=status,
-        user_backend=FakeUsers(),
+        console_cli_backend=FakeConsoleCli(),
     )
 
     manager.set_port_config(1, {"baudrate": 115200})
@@ -363,7 +392,7 @@ def test_set_port_config_noop_skips_runtime_and_config_db_write():
         config_db=db,
         port_provider=FakePortProvider({1}),
         status_backend=status,
-        user_backend=FakeUsers(),
+        console_cli_backend=FakeConsoleCli(),
     )
 
     manager.set_port_config(1, {"baudrate": 9600})
@@ -394,7 +423,7 @@ def test_set_port_config_sends_only_changed_runtime_fields():
         config_db=db,
         port_provider=FakePortProvider({1}),
         status_backend=status,
-        user_backend=FakeUsers(),
+        console_cli_backend=FakeConsoleCli(),
     )
 
     manager.set_port_config(
@@ -420,7 +449,7 @@ def test_set_port_config_rolls_back_runtime_on_commit_failure():
         config_db=db,
         port_provider=FakePortProvider({1}),
         status_backend=status,
-        user_backend=FakeUsers(),
+        console_cli_backend=FakeConsoleCli(),
     )
 
     with pytest.raises(ConfigDbTransactionError):
@@ -432,43 +461,45 @@ def test_set_port_config_rolls_back_runtime_on_commit_failure():
     assert "9600" in status.calls[1]
 
 
-def test_group_and_user_roles_match_yang_model():
-    assert GROUP_ALLOWED_ROLES == {"admin", "console_user", "operator"}
-    assert USER_ALLOWED_ROLES == {"admin", "console_user", "operator", "none"}
-
-
-def test_create_group_without_role_uses_yang_default_console_user():
+def test_set_group_config_uses_one_status_call_and_direct_commit():
     events = []
-    db = FakeConfigDb(events=events)
+    db = FakeConfigDb(
+        {
+            GROUP_TABLE: {"ops": {"role": "console_user"}},
+            GROUP_PORT_TABLE: {"ops|1": {}, "ops|2": {}},
+        },
+        events=events,
+    )
     status = FakeStatus(events=events)
     manager = SonicConsoleServerManager(
         config_db=db,
-        port_provider=FakePortProvider({1}),
+        port_provider=FakePortProvider({1, 2, 3}),
         status_backend=status,
-        user_backend=FakeUsers(),
+        console_cli_backend=FakeConsoleCli(),
     )
 
-    manager.create_or_update_group("ops")
-
-    assert events == ["prevalidate", "status", "commit"]
-    assert db.tables[GROUP_TABLE]["ops"] == {"role": "console_user"}
-    assert status.calls == [["config-group", "ops"]]
-
-
-@pytest.mark.parametrize("role", ["observer", "none"])
-def test_create_group_rejects_roles_not_supported_by_yang(role):
-    manager = SonicConsoleServerManager(
-        config_db=FakeConfigDb(),
-        port_provider=FakePortProvider({1}),
-        status_backend=FakeStatus(),
-        user_backend=FakeUsers(),
+    manager.set_group_config(
+        "ops",
+        role="operator",
+        ports="2-3",
     )
 
-    with pytest.raises(ConsoleServerManagerError, match="Unsupported group role"):
-        manager.create_or_update_group("ops", role=role)
+    assert events == ["status", "direct_commit"]
+    assert not db.prevalidated
+    assert not db.committed
+    assert set(db.tables[GROUP_PORT_TABLE]) == {"ops|2", "ops|3"}
+    assert db.tables[GROUP_TABLE]["ops"] == {"role": "operator"}
+    assert status.calls == [[
+        "config-group",
+        "ops",
+        "--role",
+        "operator",
+        "--ports",
+        "2,3",
+    ]]
 
 
-def test_set_group_ports_replaces_mapping():
+def test_set_group_config_noop_skips_runtime_and_config_db():
     events = []
     db = FakeConfigDb(
         {
@@ -480,43 +511,66 @@ def test_set_group_ports_replaces_mapping():
     status = FakeStatus(events=events)
     manager = SonicConsoleServerManager(
         config_db=db,
-        port_provider=FakePortProvider({1, 2, 3}),
+        port_provider=FakePortProvider({1, 2}),
         status_backend=status,
-        user_backend=FakeUsers(),
+        console_cli_backend=FakeConsoleCli(),
     )
 
-    manager.set_group_ports("ops", "2-3")
-
-    assert events == ["prevalidate", "status", "commit"]
-    assert set(db.tables[GROUP_PORT_TABLE]) == {"ops|2", "ops|3"}
-    assert status.calls == [["config-group", "ops", "--ports", "2,3"]]
-
-
-def test_new_user_requires_password():
-    manager = SonicConsoleServerManager(
-        config_db=FakeConfigDb(),
-        port_provider=FakePortProvider({1}),
-        status_backend=FakeStatus(),
-        user_backend=FakeUsers(),
+    manager.set_group_config(
+        "ops",
+        role="operator",
+        ports="1-2",
     )
-    with pytest.raises(PasswordRequired):
-        manager.set_user_config("alice", None, "operator", None)
+
+    assert events == []
+    assert status.calls == []
+    assert not db.direct_committed
 
 
-def test_existing_user_without_metadata_is_imported_without_password_change():
-    db = FakeConfigDb()
-    users = FakeUsers(existing={"alice"})
-    status = FakeStatus()
+def test_set_group_config_rolls_back_runtime_on_direct_commit_failure():
+    events = []
+    db = FakeConfigDb(
+        {
+            GROUP_TABLE: {"ops": {"role": "console_user"}},
+            GROUP_PORT_TABLE: {"ops|1": {}, "ops|2": {}},
+        },
+        events=events,
+    )
+    db.fail_commit = True
+    status = FakeStatus(events=events)
     manager = SonicConsoleServerManager(
         config_db=db,
-        port_provider=FakePortProvider({1}),
+        port_provider=FakePortProvider({1, 2, 3}),
         status_backend=status,
-        user_backend=users,
+        console_cli_backend=FakeConsoleCli(),
     )
 
-    manager.set_user_config("alice", None, "operator", None)
-    assert db.tables["CONSOLE_SERVER_USER"]["alice"] == {"role": "operator"}
-    assert not [call for call in users.calls if call[0] == "set_password"]
+    with pytest.raises(ConfigDbTransactionError):
+        manager.set_group_config(
+            "ops",
+            role="operator",
+            ports="2-3",
+        )
+
+    assert events == ["status", "direct_commit", "status"]
+    assert status.calls[0] == [
+        "config-group",
+        "ops",
+        "--role",
+        "operator",
+        "--ports",
+        "2,3",
+    ]
+    assert status.calls[1] == [
+        "config-group",
+        "ops",
+        "--role",
+        "console_user",
+        "--ports",
+        "1,2",
+    ]
+
+
 
 
 def test_config_db_operation_contract():
@@ -669,3 +723,223 @@ def test_sonic_config_db_backend_wraps_dry_run_failure():
 
     with pytest.raises(ConfigDbTransactionError):
         backend.commit(operations)
+
+
+def test_set_group_config_accepts_tuple_keys_from_config_db():
+    events = []
+    db = FakeConfigDb(
+        {
+            GROUP_TABLE: {"ops": {"role": "operator"}},
+            GROUP_PORT_TABLE: {
+                ("ops", "1"): {},
+                ("ops", "2"): {},
+                ("other", "3"): {},
+            },
+        },
+        events=events,
+    )
+    status = FakeStatus(events=events)
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1, 2, 3, 4}),
+        status_backend=status,
+        console_cli_backend=FakeConsoleCli(),
+    )
+
+    manager.set_group_config(
+        "ops",
+        role="admin",
+        ports="2-4",
+    )
+
+    assert events == ["status", "direct_commit"]
+    assert set(db.tables[GROUP_PORT_TABLE]) == {
+        ("other", "3"),
+        "ops|2",
+        "ops|3",
+        "ops|4",
+    }
+    assert db.tables[GROUP_TABLE]["ops"] == {"role": "admin"}
+    assert status.calls == [[
+        "config-group",
+        "ops",
+        "--role",
+        "admin",
+        "--ports",
+        "2,3,4",
+    ]]
+
+
+
+def test_delete_group_accepts_tuple_keys_from_config_db():
+    events = []
+    db = FakeConfigDb(
+        {
+            GROUP_TABLE: {"ops": {"role": "operator"}},
+            GROUP_PORT_TABLE: {
+                ("ops", "1"): {},
+                ("ops", "2"): {},
+                ("other", "3"): {},
+            },
+            "CONSOLE_SERVER_USER_GROUP": {
+                ("alice", "ops"): {},
+                ("bob", "other"): {},
+            },
+        },
+        events=events,
+    )
+    status = FakeStatus(events=events)
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1, 2, 3}),
+        status_backend=status,
+        console_cli_backend=FakeConsoleCli(),
+    )
+
+    manager.delete_group("ops")
+
+    assert events == ["status", "direct_commit"]
+    assert not db.prevalidated
+    assert not db.committed
+    assert "ops" not in db.tables[GROUP_TABLE]
+    assert set(db.tables[GROUP_PORT_TABLE]) == {("other", "3")}
+    assert set(db.tables["CONSOLE_SERVER_USER_GROUP"]) == {("bob", "other")}
+    assert status.calls == [["config-no-group", "ops"]]
+
+
+
+def test_delete_group_noop_for_missing_group():
+    events = []
+    db = FakeConfigDb(events=events)
+    status = FakeStatus(events=events)
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1}),
+        status_backend=status,
+        console_cli_backend=FakeConsoleCli(),
+    )
+
+    manager.delete_group("missing")
+
+    assert events == []
+    assert status.calls == []
+    assert not db.direct_committed
+
+
+def test_delete_group_rolls_back_runtime_on_direct_commit_failure():
+    events = []
+    db = FakeConfigDb(
+        {
+            GROUP_TABLE: {"ops": {"role": "operator"}},
+            GROUP_PORT_TABLE: {"ops|1": {}, "ops|2": {}},
+        },
+        events=events,
+    )
+    db.fail_commit = True
+    status = FakeStatus(events=events)
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1, 2}),
+        status_backend=status,
+        console_cli_backend=FakeConsoleCli(),
+    )
+
+    with pytest.raises(ConfigDbTransactionError):
+        manager.delete_group("ops")
+
+    assert events == ["status", "direct_commit", "status"]
+    assert status.calls == [
+        ["config-no-group", "ops"],
+        [
+            "config-group",
+            "ops",
+            "--role",
+            "operator",
+            "--ports",
+            "1,2",
+        ],
+    ]
+
+def test_new_group_uses_yang_default_role():
+    db = FakeConfigDb()
+    status = FakeStatus()
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1}),
+        status_backend=status,
+        console_cli_backend=FakeConsoleCli(),
+    )
+
+    manager.create_or_update_group("ops")
+
+    assert db.tables[GROUP_TABLE]["ops"] == {"role": "console_user"}
+    assert status.calls == [["config-group", "ops"]]
+
+
+
+def test_user_config_calls_console_cli_and_directly_commits_metadata():
+    events = []
+    db = FakeConfigDb({GROUP_TABLE: {"ops": {"role": "operator"}}}, events=events)
+    console_cli = FakeConsoleCli(events=events)
+    manager = SonicConsoleServerManager(config_db=db, port_provider=FakePortProvider({1}), status_backend=FakeStatus(events=events), console_cli_backend=console_cli)
+
+    manager.set_user_config("alice", "secret", "operator", ["ops"])
+
+    assert events == ["console_cli", "direct_commit"]
+    assert not db.prevalidated
+    assert not db.committed
+    assert db.tables["CONSOLE_SERVER_USER"]["alice"] == {"role": "operator"}
+    assert "alice|ops" in db.tables["CONSOLE_SERVER_USER_GROUP"]
+    assert console_cli.calls == [["config", "user", "add", "alice", "--password", "secret", "--role", "operator", "--groups", "ops"]]
+
+
+def test_user_config_does_not_commit_when_console_cli_fails():
+    events = []
+    db = FakeConfigDb({GROUP_TABLE: {"ops": {"role": "operator"}}}, events=events)
+    console_cli = FakeConsoleCli(events=events)
+    console_cli.fail = True
+    manager = SonicConsoleServerManager(config_db=db, port_provider=FakePortProvider({1}), status_backend=FakeStatus(), console_cli_backend=console_cli)
+
+    with pytest.raises(Exception, match="console-cli failed"):
+        manager.set_user_config("alice", "secret", "operator", ["ops"])
+
+    assert events == ["console_cli"]
+    assert not db.direct_committed
+    assert not db.get_entry("CONSOLE_SERVER_USER", "alice")
+
+
+def test_set_user_password_uses_console_cli_user_add():
+    console_cli = FakeConsoleCli()
+    manager = SonicConsoleServerManager(config_db=FakeConfigDb(), port_provider=FakePortProvider({1}), status_backend=FakeStatus(), console_cli_backend=console_cli)
+    manager.set_user_password("alice", "secret")
+    assert console_cli.calls == [["config", "user", "add", "alice", "--password", "secret"]]
+
+
+def test_delete_user_uses_console_cli_and_direct_commit():
+    events = []
+    db = FakeConfigDb({"CONSOLE_SERVER_USER": {"alice": {"role": "operator"}}}, events=events)
+    console_cli = FakeConsoleCli(events=events)
+    manager = SonicConsoleServerManager(config_db=db, port_provider=FakePortProvider({1}), status_backend=FakeStatus(), console_cli_backend=console_cli)
+
+    manager.delete_user("alice")
+
+    assert events == ["console_cli", "direct_commit"]
+    assert not db.prevalidated
+    assert not db.committed
+    assert not db.get_entry("CONSOLE_SERVER_USER", "alice")
+    assert console_cli.calls == [["config", "user", "delete", "alice"]]
+
+
+def test_delete_user_does_not_commit_when_console_cli_fails():
+    events = []
+    db = FakeConfigDb({"CONSOLE_SERVER_USER": {"alice": {"role": "operator"}}}, events=events)
+    console_cli = FakeConsoleCli(events=events)
+    console_cli.fail = True
+    manager = SonicConsoleServerManager(config_db=db, port_provider=FakePortProvider({1}), status_backend=FakeStatus(), console_cli_backend=console_cli)
+
+    with pytest.raises(Exception, match="console-cli failed"):
+        manager.delete_user("alice")
+
+    assert events == ["console_cli"]
+    assert not db.direct_committed
+    assert db.get_entry("CONSOLE_SERVER_USER", "alice") == {"role": "operator"}

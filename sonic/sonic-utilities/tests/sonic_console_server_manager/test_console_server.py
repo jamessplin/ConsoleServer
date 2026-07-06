@@ -5,7 +5,9 @@ import pytest
 
 import config.console_server as console_server_module
 from config.console_server import console_server
-from sonic_console_server_manager.manager import InvalidConsolePort
+from sonic_console_server_manager.manager import (
+    InvalidConsolePort,
+)
 
 
 class FakeManager:
@@ -21,14 +23,23 @@ class FakeManager:
     def set_port_config(self, port_number, updates):
         self._record(("set_port_config", port_number, updates))
 
-    def create_or_update_group(self, group_name, *, role=None):
-        self._record(("create_or_update_group", group_name, role))
-
-    def set_group_ports(self, group_name, ports):
-        self._record(("set_group_ports", group_name, ports))
+    def set_group_config(self, group_name, *, role, ports):
+        self._record(("set_group_config", group_name, role, ports))
 
     def delete_group(self, group_name):
         self._record(("delete_group", group_name))
+
+
+    def set_user_config(self, username, password, role, groups):
+        self._record(
+            ("set_user_config", username, password, role, groups)
+        )
+
+    def set_user_password(self, username, password):
+        self._record(("set_user_password", username, password))
+
+    def delete_user(self, username):
+        self._record(("delete_user", username))
 
 
 @pytest.mark.parametrize(
@@ -104,22 +115,19 @@ def test_click_rejects_non_integer_port_before_manager_creation(monkeypatch):
         (
             ["group", "add", "ops", "1-4,8"],
             [
-                ("create_or_update_group", "ops", "console_user"),
-                ("set_group_ports", "ops", "1-4,8"),
+                ("set_group_config", "ops", "console_user", "1-4,8"),
             ],
         ),
         (
             ["group", "add", "ops", "1,3-4", "--role", "operator"],
             [
-                ("create_or_update_group", "ops", "operator"),
-                ("set_group_ports", "ops", "1,3-4"),
+                ("set_group_config", "ops", "operator", "1,3-4"),
             ],
         ),
         (
             ["group", "add", "ops", "all", "--role", "admin"],
             [
-                ("create_or_update_group", "ops", "admin"),
-                ("set_group_ports", "ops", "all"),
+                ("set_group_config", "ops", "admin", "all"),
             ],
         ),
         (
@@ -216,3 +224,36 @@ def test_click_rejects_invalid_group_role_before_manager_creation(monkeypatch):
     assert result.exit_code != 0
     assert created == []
 
+
+
+
+def test_user_add_without_password_calls_manager(monkeypatch):
+    manager = FakeManager()
+    monkeypatch.setattr(console_server_module, "create_default_manager", lambda: manager)
+    result = CliRunner().invoke(console_server, ["user", "add", "alice"])
+    assert result.exit_code == 0, result.output
+    assert manager.calls == [("set_user_config", "alice", None, "none", None)]
+
+
+def test_user_add_with_password_prompts(monkeypatch):
+    manager = FakeManager()
+    monkeypatch.setattr(console_server_module, "create_default_manager", lambda: manager)
+    result = CliRunner().invoke(console_server, ["user", "add", "alice", "--password", "--role", "operator", "--groups", "ops"], input="secret\nsecret\n")
+    assert result.exit_code == 0, result.output
+    assert manager.calls == [("set_user_config", "alice", "secret", "operator", ["ops"])]
+
+
+def test_user_password_calls_manager(monkeypatch):
+    manager = FakeManager()
+    monkeypatch.setattr(console_server_module, "create_default_manager", lambda: manager)
+    result = CliRunner().invoke(console_server, ["user", "password", "alice"], input="secret\nsecret\n")
+    assert result.exit_code == 0, result.output
+    assert manager.calls == [("set_user_password", "alice", "secret")]
+
+
+def test_user_delete_calls_manager(monkeypatch):
+    manager = FakeManager()
+    monkeypatch.setattr(console_server_module, "create_default_manager", lambda: manager)
+    result = CliRunner().invoke(console_server, ["user", "delete", "alice"])
+    assert result.exit_code == 0, result.output
+    assert manager.calls == [("delete_user", "alice")]
