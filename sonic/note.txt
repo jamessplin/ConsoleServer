@@ -15,19 +15,22 @@ yang-models/sonic-console-server.yang	/usr/local/yang-models/sonic-console-serve
 yang-models/sonic-console-server.yang	/usr/local/cvlyang-models/sonic-console-server.yang
 
 
-
-src/sonic-utilities/
-├── setup.py
+sonic-utilities/
 ├── config/
-│   ├── main.py
-│   └── console_server.py
+│   ├── console_server.py
+│   └── main.py
+├── show/
+│   ├── console_server.py
+│   └── main.py
+├── setup.py
 ├── sonic_console_server_manager/
 │   ├── __init__.py
 │   └── manager.py
 └── tests/
     └── sonic_console_server_manager/
-        ├── test_manager.py
-        └── test_console_server.py
+        ├── test_console_server.py
+        ├── test_show_console_server.py
+        └── test_manager.py
 
 
 Source file	Live-switch destination	Needed for manual test
@@ -59,22 +62,6 @@ PYTHONPATH=. python3 -m pytest -v \
 
 docker start james_test_env
 docker exec -it james_test_env bash
-
-
-
-
-1. Live-test max-clients, idle-timeout, and label
-2. Restore all port values to intended defaults
-3. Finalize group CLI syntax
-4. Implement group CLI commands
-5. Move group operations to direct ConfigDB transactions
-6. Implement user CLI commands
-7. Implement show commands
-8. Implement connect line
-9. Design boot-time port inventory/default initialization
-10. Final YANG/package/image integration
-
-
 
 config/console_server.py
 sonic_console_server_manager/manager.py

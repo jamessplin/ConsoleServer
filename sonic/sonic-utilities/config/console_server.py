@@ -177,6 +177,28 @@ def _prompt_password() -> str:
     )
 
 
+def _resolve_password(
+    password: str | None,
+    prompt_password: bool,
+    *,
+    required: bool,
+) -> str | None:
+    if password is not None and prompt_password:
+        raise click.ClickException(
+            "--password and --prompt-password cannot be used together"
+        )
+
+    if prompt_password:
+        return _prompt_password()
+
+    if required and password is None:
+        raise click.ClickException(
+            "Either --password or --prompt-password is required"
+        )
+
+    return password
+
+
 @user.command(name="add")
 @click.argument("username")
 @click.option(
@@ -195,7 +217,14 @@ def _prompt_password() -> str:
 )
 @click.option(
     "--password",
-    "prompt_for_password",
+    metavar="VALUE",
+    help=(
+        "Password value for non-interactive use. The value may be visible "
+        "in process arguments and shell history."
+    ),
+)
+@click.option(
+    "--prompt-password",
     is_flag=True,
     help="Prompt securely to set or replace the Linux password.",
 )
@@ -203,14 +232,19 @@ def user_add(
     username: str,
     role: str,
     groups: str | None,
-    prompt_for_password: bool,
+    password: str | None,
+    prompt_password: bool,
 ) -> None:
     """Create or update a console-server user."""
 
+    password = _resolve_password(
+        password,
+        prompt_password,
+        required=False,
+    )
+
     try:
         manager = create_default_manager()
-        password = _prompt_password() if prompt_for_password else None
-
         manager.set_user_config(
             username,
             password,
@@ -223,12 +257,35 @@ def user_add(
 
 @user.command(name="password")
 @click.argument("username")
-def user_password(username: str) -> None:
+@click.option(
+    "--password",
+    metavar="VALUE",
+    help=(
+        "Password value for non-interactive use. The value may be visible "
+        "in process arguments and shell history."
+    ),
+)
+@click.option(
+    "--prompt-password",
+    is_flag=True,
+    help="Prompt securely for the new password.",
+)
+def user_password(
+    username: str,
+    password: str | None,
+    prompt_password: bool,
+) -> None:
     """Set the password of an existing Linux user."""
+
+    password = _resolve_password(
+        password,
+        prompt_password,
+        required=True,
+    )
 
     try:
         manager = create_default_manager()
-        manager.set_user_password(username, _prompt_password())
+        manager.set_user_password(username, password)
     except ConsoleServerManagerError as error:
         raise click.ClickException(str(error)) from error
 

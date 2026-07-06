@@ -229,26 +229,203 @@ def test_click_rejects_invalid_group_role_before_manager_creation(monkeypatch):
 
 def test_user_add_without_password_calls_manager(monkeypatch):
     manager = FakeManager()
-    monkeypatch.setattr(console_server_module, "create_default_manager", lambda: manager)
-    result = CliRunner().invoke(console_server, ["user", "add", "alice"])
+    monkeypatch.setattr(
+        console_server_module,
+        "create_default_manager",
+        lambda: manager,
+    )
+
+    result = CliRunner().invoke(
+        console_server,
+        ["user", "add", "alice"],
+    )
+
     assert result.exit_code == 0, result.output
-    assert manager.calls == [("set_user_config", "alice", None, "none", None)]
+    assert manager.calls == [
+        ("set_user_config", "alice", None, "none", None),
+    ]
 
 
-def test_user_add_with_password_prompts(monkeypatch):
+def test_user_add_with_password_value_calls_manager(monkeypatch):
     manager = FakeManager()
-    monkeypatch.setattr(console_server_module, "create_default_manager", lambda: manager)
-    result = CliRunner().invoke(console_server, ["user", "add", "alice", "--password", "--role", "operator", "--groups", "ops"], input="secret\nsecret\n")
+    monkeypatch.setattr(
+        console_server_module,
+        "create_default_manager",
+        lambda: manager,
+    )
+
+    result = CliRunner().invoke(
+        console_server,
+        [
+            "user",
+            "add",
+            "alice",
+            "--password",
+            "secret",
+            "--role",
+            "operator",
+            "--groups",
+            "ops",
+        ],
+    )
+
     assert result.exit_code == 0, result.output
-    assert manager.calls == [("set_user_config", "alice", "secret", "operator", ["ops"])]
+    assert manager.calls == [
+        ("set_user_config", "alice", "secret", "operator", ["ops"]),
+    ]
 
 
-def test_user_password_calls_manager(monkeypatch):
+def test_user_add_with_prompt_password_prompts(monkeypatch):
     manager = FakeManager()
-    monkeypatch.setattr(console_server_module, "create_default_manager", lambda: manager)
-    result = CliRunner().invoke(console_server, ["user", "password", "alice"], input="secret\nsecret\n")
+    monkeypatch.setattr(
+        console_server_module,
+        "create_default_manager",
+        lambda: manager,
+    )
+
+    result = CliRunner().invoke(
+        console_server,
+        [
+            "user",
+            "add",
+            "alice",
+            "--prompt-password",
+            "--role",
+            "operator",
+            "--groups",
+            "ops",
+        ],
+        input="secret\nsecret\n",
+    )
+
     assert result.exit_code == 0, result.output
-    assert manager.calls == [("set_user_password", "alice", "secret")]
+    assert "secret" not in result.output
+    assert manager.calls == [
+        ("set_user_config", "alice", "secret", "operator", ["ops"]),
+    ]
+
+
+def test_user_add_rejects_both_password_modes(monkeypatch):
+    created = []
+
+    def create_manager():
+        created.append(True)
+        return FakeManager()
+
+    monkeypatch.setattr(
+        console_server_module,
+        "create_default_manager",
+        create_manager,
+    )
+
+    result = CliRunner().invoke(
+        console_server,
+        [
+            "user",
+            "add",
+            "alice",
+            "--password",
+            "secret",
+            "--prompt-password",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "cannot be used together" in result.output
+    assert created == []
+
+
+def test_user_password_with_password_value_calls_manager(monkeypatch):
+    manager = FakeManager()
+    monkeypatch.setattr(
+        console_server_module,
+        "create_default_manager",
+        lambda: manager,
+    )
+
+    result = CliRunner().invoke(
+        console_server,
+        ["user", "password", "alice", "--password", "secret"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert manager.calls == [
+        ("set_user_password", "alice", "secret"),
+    ]
+
+
+def test_user_password_with_prompt_password_prompts(monkeypatch):
+    manager = FakeManager()
+    monkeypatch.setattr(
+        console_server_module,
+        "create_default_manager",
+        lambda: manager,
+    )
+
+    result = CliRunner().invoke(
+        console_server,
+        ["user", "password", "alice", "--prompt-password"],
+        input="secret\nsecret\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "secret" not in result.output
+    assert manager.calls == [
+        ("set_user_password", "alice", "secret"),
+    ]
+
+
+def test_user_password_requires_password_mode(monkeypatch):
+    created = []
+
+    def create_manager():
+        created.append(True)
+        return FakeManager()
+
+    monkeypatch.setattr(
+        console_server_module,
+        "create_default_manager",
+        create_manager,
+    )
+
+    result = CliRunner().invoke(
+        console_server,
+        ["user", "password", "alice"],
+    )
+
+    assert result.exit_code != 0
+    assert "Either --password or --prompt-password is required" in result.output
+    assert created == []
+
+
+def test_user_password_rejects_both_password_modes(monkeypatch):
+    created = []
+
+    def create_manager():
+        created.append(True)
+        return FakeManager()
+
+    monkeypatch.setattr(
+        console_server_module,
+        "create_default_manager",
+        create_manager,
+    )
+
+    result = CliRunner().invoke(
+        console_server,
+        [
+            "user",
+            "password",
+            "alice",
+            "--password",
+            "secret",
+            "--prompt-password",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "cannot be used together" in result.output
+    assert created == []
 
 
 def test_user_delete_calls_manager(monkeypatch):

@@ -182,9 +182,9 @@ Results:
 
 ---
 
-### 4. Group direct ConfigDB updates are not a hard Redis transaction
+### 4. Group direct ConfigDB updates are sequential, not a hard Redis transaction
 
-**Status:** Open
+**Status:** Future robustness improvement / not a release blocker
 
 Group add/update/delete uses the fast path:
 
@@ -196,17 +196,52 @@ manager validation
 
 This reduced execution time from approximately 52–71 seconds to about 3 seconds.
 
-However, `commit_direct()` currently writes multiple ConfigDB rows sequentially. A low-level failure in the middle of the batch could leave partial ConfigDB state.
+The data model follows the standard SONiC parent/member pattern used by VLAN:
 
-Examples of multi-row operations:
+```text
+VLAN
+VLAN_MEMBER
+```
+
+corresponds to:
 
 ```text
 CONSOLE_SERVER_GROUP
 CONSOLE_SERVER_GROUP_PORT
-CONSOLE_SERVER_USER_GROUP
 ```
 
-A future improvement should use a true atomic Redis transaction or an equivalent ConfigDB batch mechanism.
+Standard SONiC VLAN member commands commonly update ConfigDB one member row at a time with direct `set_entry()` or delete operations. Multi-entry operations may also loop over entries sequentially rather than using one Redis `MULTI/EXEC` transaction.
+
+Our current group implementation therefore follows normal SONiC direct-ConfigDB practice. However, one console-server group command can replace the complete membership set and may write several rows:
+
+```text
+CONSOLE_SERVER_GROUP|ops
+CONSOLE_SERVER_GROUP_PORT|ops|1
+CONSOLE_SERVER_GROUP_PORT|ops|2
+CONSOLE_SERVER_GROUP_PORT|ops|3
+```
+
+If a low-level failure occurs in the middle of these sequential writes, ConfigDB could temporarily contain a partial group configuration.
+
+The console-server case also coordinates two systems:
+
+```text
+seriald-status runtime state
+ConfigDB metadata
+```
+
+The manager updates runtime first and attempts runtime compensation if the ConfigDB write fails. A partial ConfigDB update is still theoretically possible because earlier successful row writes are not automatically rolled back.
+
+A true Redis transaction would provide stronger all-or-nothing behavior for the ConfigDB batch, but this is considered an optional robustness enhancement rather than a release requirement.
+
+Decision:
+
+```text
+Keep the current sequential direct-write implementation.
+Document the limitation.
+Revisit atomic Redis transactions only if product reliability requirements demand it.
+```
+
 
 ---
 
@@ -465,7 +500,11 @@ The manager and regression test were updated to use `delete`.
 
 ## To-Do Summary
 
-- Implement a true atomic Redis transaction for multi-row group changes.
+- Implement show commands for running configuration, startup configuration, sessions, and product information.
+- Implement the interactive connect command after show commands are complete.
+
+
+- Consider a true atomic Redis transaction for multi-row group changes as a future robustness enhancement.
 - Implement secure non-interactive password input, preferably `--password-stdin`, in both `console-cli` and the SONiC wrapper.
 - Finalize boot-time population of `CONSOLE_SERVER_PORT`.
 - Define startup synchronization between ConfigDB and console-server runtime.
