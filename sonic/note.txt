@@ -36,6 +36,8 @@ sonic-utilities/
 Source file	Live-switch destination	Needed for manual test
 config/console_server.py	/usr/local/lib/python3.11/dist-packages/config/console_server.py	Yes
 config/main.py	Patch /usr/local/lib/python3.11/dist-packages/config/main.py	Yes
+show/console_server.py	/usr/local/lib/python3.11/dist-packages/show/console_server.py	Yes
+show/main.py	Patch /usr/local/lib/python3.11/dist-packages/show/main.py	Yes
 sonic_console_server_manager/__init__.py	/usr/local/lib/python3.11/dist-packages/sonic_console_server_manager/__init__.py	Yes
 sonic_console_server_manager/manager.py	/usr/local/lib/python3.11/dist-packages/sonic_console_server_manager/manager.py
 
@@ -59,14 +61,26 @@ PYTHONPATH=. python3 -m pytest -v \
     tests/sonic_console_server_manager/test_console_server.py
 
 
+PYTHONPATH=. python3 -m pytest -v \
+    --confcutdir=tests/sonic_console_server_manager \
+    tests/sonic_console_server_manager/test_manager.py \
+    tests/sonic_console_server_manager/test_console_server.py \
+    tests/sonic_console_server_manager/test_show_console_server.py
+
 
 docker start james_test_env
 docker exec -it james_test_env bash
 
 config/console_server.py
+show/console_server.py
 sonic_console_server_manager/manager.py
 tests/sonic_console_server_manager/test_console_server.py
 tests/sonic_console_server_manager/test_manager.py
+tests/sonic_console_server_manager/test_show_console_server.py
+
+config/main.py patch
+show/main.py patch
+
 
 python3 -m py_compile manager.py
 

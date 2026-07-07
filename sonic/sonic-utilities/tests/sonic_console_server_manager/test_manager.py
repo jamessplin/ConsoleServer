@@ -943,3 +943,78 @@ def test_delete_user_does_not_commit_when_console_cli_fails():
     assert events == ["console_cli"]
     assert not db.direct_committed
     assert db.get_entry("CONSOLE_SERVER_USER", "alice") == {"role": "operator"}
+
+
+def test_get_port_configs_returns_numeric_sorted_config_db_rows():
+    db = FakeConfigDb(
+        {
+            PORT_TABLE: {
+                "10": {"label": "COM10", "baudrate": "57600"},
+                "2": {"label": "COM2", "baudrate": "115200"},
+            }
+        }
+    )
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({2, 10}),
+        status_backend=FakeStatus(),
+        console_cli_backend=FakeConsoleCli(),
+    )
+
+    assert manager.get_port_configs() == [
+        {"port": 2, "label": "COM2", "baudrate": "115200"},
+        {"port": 10, "label": "COM10", "baudrate": "57600"},
+    ]
+
+
+def test_get_user_configs_aggregates_tuple_and_string_group_keys():
+    db = FakeConfigDb(
+        {
+            "CONSOLE_SERVER_USER": {
+                "bob": {"role": "none"},
+                "alice": {"role": "operator"},
+            },
+            "CONSOLE_SERVER_USER_GROUP": {
+                ("alice", "ops"): {},
+                "alice|lab": {},
+            },
+        }
+    )
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=FakeConsoleCli(),
+    )
+
+    assert manager.get_user_configs() == [
+        {"username": "alice", "role": "operator", "groups": ["lab", "ops"]},
+        {"username": "bob", "role": "none", "groups": []},
+    ]
+
+
+def test_get_group_configs_aggregates_and_sorts_ports_numerically():
+    db = FakeConfigDb(
+        {
+            GROUP_TABLE: {
+                "ops": {"role": "operator"},
+                "lab": {"role": "console_user"},
+            },
+            GROUP_PORT_TABLE: {
+                ("ops", "10"): {},
+                "ops|2": {},
+                "lab|1": {},
+            },
+        }
+    )
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1, 2, 10}),
+        status_backend=FakeStatus(),
+        console_cli_backend=FakeConsoleCli(),
+    )
+
+    assert manager.get_group_configs() == [
+        {"group": "lab", "role": "console_user", "ports": [1]},
+        {"group": "ops", "role": "operator", "ports": [2, 10]},
+    ]

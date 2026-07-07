@@ -889,6 +889,87 @@ class SonicConsoleServerManager:
         except Exception as exc:
             raise ConfigDbTransactionError(str(exc)) from exc
 
+    def get_port_configs(self) -> list[dict[str, Any]]:
+        """Return configured console ports, sorted numerically by port."""
+
+        records: list[dict[str, Any]] = []
+        for raw_key, fields in self._config_db.get_table(PORT_TABLE).items():
+            if isinstance(raw_key, tuple):
+                if len(raw_key) != 1:
+                    raise ConfigDbTransactionError(
+                        f"Invalid key {raw_key!r} in {PORT_TABLE}"
+                    )
+                raw_port = raw_key[0]
+            else:
+                raw_port = raw_key
+
+            try:
+                port = int(raw_port)
+            except (TypeError, ValueError) as error:
+                raise ConfigDbTransactionError(
+                    f"Invalid port key {raw_key!r} in {PORT_TABLE}"
+                ) from error
+
+            record = {"port": port}
+            record.update(dict(fields))
+            records.append(record)
+
+        return sorted(records, key=lambda item: item["port"])
+
+    def get_user_configs(self) -> list[dict[str, Any]]:
+        """Return configured users with their ConfigDB group mappings."""
+
+        users = {
+            str(key): dict(fields)
+            for key, fields in self._config_db.get_table(USER_TABLE).items()
+        }
+        memberships: dict[str, set[str]] = {}
+        for raw_key in self._config_db.get_table(USER_GROUP_TABLE):
+            username, group_name = _decode_compound_key(
+                raw_key,
+                parts=2,
+                table=USER_GROUP_TABLE,
+            )
+            memberships.setdefault(username, set()).add(group_name)
+
+        records: list[dict[str, Any]] = []
+        for username in sorted(set(users) | set(memberships)):
+            record = {"username": username}
+            record.update(users.get(username, {}))
+            record["groups"] = sorted(memberships.get(username, set()))
+            records.append(record)
+        return records
+
+    def get_group_configs(self) -> list[dict[str, Any]]:
+        """Return configured groups with their ConfigDB port mappings."""
+
+        groups = {
+            str(key): dict(fields)
+            for key, fields in self._config_db.get_table(GROUP_TABLE).items()
+        }
+        memberships: dict[str, set[int]] = {}
+        for raw_key in self._config_db.get_table(GROUP_PORT_TABLE):
+            group_name, raw_port = _decode_compound_key(
+                raw_key,
+                parts=2,
+                table=GROUP_PORT_TABLE,
+            )
+            try:
+                port = int(raw_port)
+            except ValueError as error:
+                raise ConfigDbTransactionError(
+                    f"Invalid port {raw_port!r} in {GROUP_PORT_TABLE}"
+                ) from error
+            memberships.setdefault(group_name, set()).add(port)
+
+        records: list[dict[str, Any]] = []
+        for group_name in sorted(set(groups) | set(memberships)):
+            record = {"group": group_name}
+            record.update(groups.get(group_name, {}))
+            record["ports"] = sorted(memberships.get(group_name, set()))
+            records.append(record)
+        return records
+
     def set_port_config(self, port: int, updates: Mapping[str, Any]) -> None:
         valid_ports = self.get_valid_ports()
         current = dict(self._config_db.get_entry(PORT_TABLE, str(port)))
