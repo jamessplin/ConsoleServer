@@ -242,7 +242,26 @@ def test_user_add_without_password_calls_manager(monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert manager.calls == [
-        ("set_user_config", "alice", None, "none", None),
+        ("set_user_config", "alice", None, None, None),
+    ]
+
+
+def test_user_group_only_update_preserves_role_by_passing_none(monkeypatch):
+    manager = FakeManager()
+    monkeypatch.setattr(
+        console_server_module,
+        "create_default_manager",
+        lambda: manager,
+    )
+
+    result = CliRunner().invoke(
+        console_server,
+        ["user", "add", "alice", "--groups", "lab"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert manager.calls == [
+        ("set_user_config", "alice", None, None, ["lab"]),
     ]
 
 

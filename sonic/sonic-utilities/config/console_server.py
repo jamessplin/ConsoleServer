@@ -207,8 +207,11 @@ def _resolve_password(
         ["none", "admin", "console_user", "operator"],
         case_sensitive=False,
     ),
-    default="none",
-    show_default=True,
+    default=None,
+    help=(
+        "User role. Existing role is preserved when omitted; "
+        "new users default to none."
+    ),
 )
 @click.option(
     "--groups",
@@ -230,7 +233,7 @@ def _resolve_password(
 )
 def user_add(
     username: str,
-    role: str,
+    role: str | None,
     groups: str | None,
     password: str | None,
     prompt_password: bool,

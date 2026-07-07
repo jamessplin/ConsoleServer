@@ -10,6 +10,8 @@ from sonic_console_server_manager.manager import (
     GROUP_PORT_TABLE,
     GROUP_TABLE,
     PORT_TABLE,
+    USER_GROUP_TABLE,
+    USER_TABLE,
     ConfigDbConsolePortProvider,
     ConfigDbOperation,
     ConfigDbTransactionError,
@@ -891,6 +893,50 @@ def test_user_config_calls_console_cli_and_directly_commits_metadata():
     assert db.tables["CONSOLE_SERVER_USER"]["alice"] == {"role": "operator"}
     assert "alice|ops" in db.tables["CONSOLE_SERVER_USER_GROUP"]
     assert console_cli.calls == [["config", "user", "add", "alice", "--password", "secret", "--role", "operator", "--groups", "ops"]]
+
+
+def test_user_group_only_update_preserves_existing_role():
+    db = FakeConfigDb(
+        {
+            USER_TABLE: {"alice": {"role": "admin"}},
+            GROUP_TABLE: {"lab": {"role": "console_user"}},
+            USER_GROUP_TABLE: {"alice|ops": {}},
+        }
+    )
+    console_cli = FakeConsoleCli()
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    manager.set_user_config("alice", None, None, ["lab"])
+
+    assert db.get_entry(USER_TABLE, "alice") == {"role": "admin"}
+    assert not db.get_entry(USER_GROUP_TABLE, "alice|ops")
+    assert db.get_entry(USER_GROUP_TABLE, "alice|lab") == {}
+    assert console_cli.calls == [
+        ["config", "user", "add", "alice", "--groups", "lab"]
+    ]
+
+
+def test_new_user_without_role_uses_none():
+    db = FakeConfigDb()
+    console_cli = FakeConsoleCli()
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    manager.set_user_config("alice", "secret", None, None)
+
+    assert db.get_entry(USER_TABLE, "alice") == {"role": "none"}
+    assert console_cli.calls == [
+        ["config", "user", "add", "alice", "--password", "secret"]
+    ]
 
 
 def test_user_config_does_not_commit_when_console_cli_fails():
