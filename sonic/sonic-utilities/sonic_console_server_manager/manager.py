@@ -201,7 +201,10 @@ class StatusBackend(Protocol):
 
 class ConsoleCliBackend(Protocol):
     def run(self, arguments: Sequence[str]) -> CommandResult:
-        """Run the independent console-server application's CLI."""
+        """Run a non-interactive console-cli command."""
+
+    def run_interactive(self, arguments: Sequence[str]) -> int:
+        """Run console-cli with the caller's terminal attached."""
 
 
 class SonicConfigDbBackend:
@@ -541,14 +544,20 @@ class SubprocessConsoleCliBackend:
 
     Passwords are passed through argv because this is the only interface
     currently supported by ``console-cli``. Never log full arguments.
+
+    Interactive connect operations inherit stdin, stdout, and stderr from the
+    SONiC ``connect`` command so terminal behavior is preserved.
     """
 
     def __init__(self, command: str = "/usr/local/bin/console-cli") -> None:
         self._command = command
 
-    def run(self, arguments: Sequence[str]) -> CommandResult:
+    def _validate_command(self) -> None:
         if not os.path.exists(self._command):
             raise ConsoleServerCommandError(f"{self._command} not found")
+
+    def run(self, arguments: Sequence[str]) -> CommandResult:
+        self._validate_command()
         completed = subprocess.run(
             [self._command, *map(str, arguments)],
             check=False,
@@ -560,6 +569,21 @@ class SubprocessConsoleCliBackend:
             stdout=completed.stdout,
             stderr=completed.stderr,
         )
+
+    def run_interactive(self, arguments: Sequence[str]) -> int:
+        """Run console-cli without redirecting any terminal stream."""
+
+        self._validate_command()
+        try:
+            completed = subprocess.run(
+                [self._command, *map(str, arguments)],
+                check=False,
+            )
+        except OSError as error:
+            raise ConsoleServerCommandError(
+                f"Failed to execute {self._command}: {error}"
+            ) from error
+        return completed.returncode
 
 
 # ---------------------------------------------------------------------------
@@ -969,6 +993,58 @@ class SonicConsoleServerManager:
             record["ports"] = sorted(memberships.get(group_name, set()))
             records.append(record)
         return records
+
+    def resolve_port_by_label(self, label: str) -> int:
+        """Resolve an exact, case-sensitive port label to its line ID."""
+
+        if not isinstance(label, str) or not label.strip():
+            raise InvalidPortConfiguration(
+                "Console port label must not be empty"
+            )
+
+        requested_label = label.strip()
+        matches: list[int] = []
+
+        for record in self.get_port_configs():
+            port = record["port"]
+            stored_label = record.get("label")
+            if stored_label is None or not str(stored_label).strip():
+                raise MissingStoredPortLabel(
+                    f"Console port {port} has no stored label"
+                )
+            if str(stored_label) == requested_label:
+                matches.append(port)
+
+        if not matches:
+            raise InvalidConsolePort(
+                f"No console port has label '{requested_label}'"
+            )
+
+        if len(matches) > 1:
+            ports = ", ".join(str(port) for port in sorted(matches))
+            raise DuplicatePortLabel(
+                f"Label '{requested_label}' is assigned to multiple "
+                f"console ports: {ports}"
+            )
+
+        return matches[0]
+
+    def connect_line(self, port: int) -> int:
+        """Validate a line and start an interactive console-cli connection."""
+
+        valid_ports = self.get_valid_ports()
+        validate_ports([port], valid_ports=valid_ports)
+
+        try:
+            return self._console_cli.run_interactive(
+                ["connect", str(port)]
+            )
+        except ConsoleServerManagerError:
+            raise
+        except Exception as error:
+            raise ConsoleServerCommandError(
+                f"Failed to connect to console port {port}: {error}"
+            ) from error
 
     def set_port_config(self, port: int, updates: Mapping[str, Any]) -> None:
         valid_ports = self.get_valid_ports()

@@ -18,12 +18,14 @@ from sonic_console_server_manager.manager import (
     ConfigDbValidationError,
     DuplicatePortLabel,
     InvalidConsolePort,
+    InvalidPortConfiguration,
     InvalidPortExpression,
     PasswordRequired,
     ConsoleServerManagerError,
     ReservedPortLabelConflict,
     SonicConfigDbBackend,
     SonicConsoleServerManager,
+    SubprocessConsoleCliBackend,
     build_port_config,
     normalize_port_label,
     parse_port_expression,
@@ -141,7 +143,10 @@ class FakeUsers_OBSOLETE:
 class FakeConsoleCli:
     def __init__(self, events=None):
         self.calls = []
+        self.interactive_calls = []
         self.fail = False
+        self.interactive_fail = False
+        self.interactive_returncode = 0
         self.events = events
 
     def run(self, arguments):
@@ -152,6 +157,14 @@ class FakeConsoleCli:
         if self.fail:
             return CommandResult(1, "", "console-cli failed")
         return CommandResult(0, "", "")
+
+    def run_interactive(self, arguments):
+        self.interactive_calls.append(list(arguments))
+        if self.events is not None:
+            self.events.append("console_cli_interactive")
+        if self.interactive_fail:
+            raise RuntimeError("interactive console-cli failed")
+        return self.interactive_returncode
 
 
 class FakeRawConfigDb:
@@ -1063,4 +1076,191 @@ def test_get_group_configs_aggregates_and_sorts_ports_numerically():
     assert manager.get_group_configs() == [
         {"group": "lab", "role": "console_user", "ports": [1]},
         {"group": "ops", "role": "operator", "ports": [2, 10]},
+    ]
+
+
+def test_resolve_port_by_label_returns_matching_port():
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(
+            {
+                PORT_TABLE: {
+                    "1": {"label": "COM1"},
+                    "5": {"label": "BackupConsole"},
+                    "8": {"label": "Router Console"},
+                }
+            }
+        ),
+        port_provider=FakePortProvider({1, 5, 8}),
+        status_backend=FakeStatus(),
+        console_cli_backend=FakeConsoleCli(),
+    )
+
+    assert manager.resolve_port_by_label("BackupConsole") == 5
+
+
+def test_resolve_port_by_label_is_case_sensitive():
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(
+            {PORT_TABLE: {"5": {"label": "BackupConsole"}}}
+        ),
+        port_provider=FakePortProvider({5}),
+        status_backend=FakeStatus(),
+        console_cli_backend=FakeConsoleCli(),
+    )
+
+    with pytest.raises(
+        InvalidConsolePort,
+        match="No console port has label 'backupconsole'",
+    ):
+        manager.resolve_port_by_label("backupconsole")
+
+
+def test_resolve_port_by_label_rejects_unknown_label():
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(
+            {PORT_TABLE: {"1": {"label": "COM1"}}}
+        ),
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=FakeConsoleCli(),
+    )
+
+    with pytest.raises(
+        InvalidConsolePort,
+        match="No console port has label 'Missing'",
+    ):
+        manager.resolve_port_by_label("Missing")
+
+
+def test_resolve_port_by_label_detects_duplicate_config_db_data():
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(
+            {
+                PORT_TABLE: {
+                    "1": {"label": "Duplicate"},
+                    "2": {"label": "Duplicate"},
+                }
+            }
+        ),
+        port_provider=FakePortProvider({1, 2}),
+        status_backend=FakeStatus(),
+        console_cli_backend=FakeConsoleCli(),
+    )
+
+    with pytest.raises(
+        DuplicatePortLabel,
+        match=(
+            "Label 'Duplicate' is assigned to multiple "
+            "console ports: 1, 2"
+        ),
+    ):
+        manager.resolve_port_by_label("Duplicate")
+
+
+def test_resolve_port_by_label_rejects_empty_label():
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(
+            {PORT_TABLE: {"1": {"label": "COM1"}}}
+        ),
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=FakeConsoleCli(),
+    )
+
+    with pytest.raises(
+        InvalidPortConfiguration,
+        match="Console port label must not be empty",
+    ):
+        manager.resolve_port_by_label("   ")
+
+
+def test_connect_line_validates_port_and_runs_interactive_console_cli():
+    console_cli = FakeConsoleCli()
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(),
+        port_provider=FakePortProvider({1, 5, 8}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    assert manager.connect_line(5) == 0
+    assert console_cli.interactive_calls == [["connect", "5"]]
+    assert console_cli.calls == []
+
+
+def test_connect_line_rejects_unknown_port_before_execution():
+    console_cli = FakeConsoleCli()
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(),
+        port_provider=FakePortProvider({1, 5, 8}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    with pytest.raises(
+        InvalidConsolePort,
+        match="Invalid console port",
+    ):
+        manager.connect_line(99)
+
+    assert console_cli.interactive_calls == []
+
+
+def test_connect_line_returns_console_cli_exit_status():
+    console_cli = FakeConsoleCli()
+    console_cli.interactive_returncode = 9
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(),
+        port_provider=FakePortProvider({1, 5, 8}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    assert manager.connect_line(5) == 9
+    assert console_cli.interactive_calls == [["connect", "5"]]
+
+
+def test_connect_line_wraps_unexpected_backend_failure():
+    console_cli = FakeConsoleCli()
+    console_cli.interactive_fail = True
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(),
+        port_provider=FakePortProvider({5}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    with pytest.raises(
+        ConsoleServerManagerError,
+        match="Failed to connect to console port 5",
+    ):
+        manager.connect_line(5)
+
+
+def test_console_cli_run_interactive_inherits_terminal(
+    monkeypatch,
+    tmp_path,
+):
+    command = tmp_path / "console-cli"
+    command.write_text("#!/bin/sh\\n")
+    command.chmod(0o755)
+    calls = []
+
+    class Completed:
+        returncode = 4
+
+    def fake_run(arguments, **kwargs):
+        calls.append((arguments, kwargs))
+        return Completed()
+
+    monkeypatch.setattr(manager_module.subprocess, "run", fake_run)
+
+    backend = SubprocessConsoleCliBackend(str(command))
+
+    assert backend.run_interactive(["connect", "5"]) == 4
+    assert calls == [
+        (
+            [str(command), "connect", "5"],
+            {"check": False},
+        )
     ]

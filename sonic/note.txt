@@ -71,12 +71,14 @@ PYTHONPATH=. python3 -m pytest -v \
 docker start james_test_env
 docker exec -it james_test_env bash
 
-config/console_server.py
-show/console_server.py
+config/console_server.py  main.py(patch)
+show/console_server.py    main.py(patch)
+connect/console_server.py main.py(patch)
 sonic_console_server_manager/manager.py
 tests/sonic_console_server_manager/test_console_server.py
 tests/sonic_console_server_manager/test_manager.py
 tests/sonic_console_server_manager/test_show_console_server.py
+tests/sonic_console_server_manager/test_connect_console_server.py
 
 config/main.py patch
 show/main.py patch
@@ -98,5 +100,33 @@ for port in 1 2 3 4; do
         label "COM${port}"
 done
 
- scp /home/james/tmp/manager.py admin@10.19.252.37:/tmp
+
+
+sonic-utilities/
+├── connect/
+│   ├── __init__.py
+│   ├── aliases.ini
+│   ├── main.py                         # modify: register console-server
+│   └── console_server.py               # new
+│
+├── sonic_console_server_manager/
+│   ├── __init__.py                     # normally no change required
+│   └── manager.py                      # modify
+│
+└── tests/
+    └── sonic_console_server_manager/
+        ├── test_connect_console_server.py   # new: Click command tests
+        └── test_manager.py                  # modify: manager/backend tests
+
+
+
+PYTHONPATH=. python3 -m pytest -v \
+    --confcutdir=tests/sonic_console_server_manager \
+    tests/sonic_console_server_manager/test_manager.py \
+    tests/sonic_console_server_manager/test_console_server.py \
+    tests/sonic_console_server_manager/test_show_console_server.py \
+    tests/sonic_console_server_manager/test_connect_console_server.py
+
+
+scp /home/james/tmp/manager.py admin@10.19.252.37:/tmp
 YourPaSsWoRd
