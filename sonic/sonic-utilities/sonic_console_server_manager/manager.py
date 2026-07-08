@@ -994,6 +994,77 @@ class SonicConsoleServerManager:
             records.append(record)
         return records
 
+    def get_sessions(self) -> list[dict[str, Any]]:
+        """Return active console-server sessions from the runtime daemon.
+
+        The independent console-server application remains authoritative for
+        live session state. Only active clients are returned; empty lines,
+        daemon session IDs, and last-activity timestamps are intentionally not
+        exposed through this SONiC-facing API.
+        """
+
+        result = self._run_console_cli(["show", "sessions", "--json"])
+        try:
+            payload = json.loads(result.stdout)
+        except (TypeError, json.JSONDecodeError) as error:
+            raise ConsoleServerCommandError(
+                "console-cli returned invalid session JSON"
+            ) from error
+
+        if not isinstance(payload, Mapping):
+            raise ConsoleServerCommandError(
+                "console-cli session JSON must be an object"
+            )
+
+        lines = payload.get("lines")
+        if not isinstance(lines, list):
+            raise ConsoleServerCommandError(
+                "console-cli session JSON does not contain a lines list"
+            )
+
+        records: list[dict[str, Any]] = []
+        for line_entry in lines:
+            if not isinstance(line_entry, Mapping):
+                raise ConsoleServerCommandError(
+                    "console-cli session JSON contains an invalid line entry"
+                )
+
+            try:
+                line = int(line_entry.get("line"))
+            except (TypeError, ValueError) as error:
+                raise ConsoleServerCommandError(
+                    "console-cli session JSON contains an invalid line number"
+                ) from error
+
+            mode = line_entry.get("mode")
+            clients = line_entry.get("clients")
+            if not isinstance(clients, list):
+                raise ConsoleServerCommandError(
+                    f"console-cli session JSON for line {line} has no clients list"
+                )
+
+            for client in clients:
+                if not isinstance(client, Mapping):
+                    raise ConsoleServerCommandError(
+                        f"console-cli session JSON for line {line} contains "
+                        "an invalid client entry"
+                    )
+
+                records.append(
+                    {
+                        "line": line,
+                        "mode": mode,
+                        "user": client.get("user"),
+                        "role": client.get("role"),
+                        "ip": client.get("ip"),
+                        "port": client.get("port"),
+                        "idle_timeout": client.get("idle_timeout"),
+                        "time_left": client.get("time_left"),
+                    }
+                )
+
+        return records
+
     def resolve_port_by_label(self, label: str) -> int:
         """Resolve an exact, case-sensitive port label to its line ID."""
 

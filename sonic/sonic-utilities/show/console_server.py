@@ -1,4 +1,4 @@
-"""Show commands for SONiC console-server ConfigDB configuration."""
+"""Show commands for SONiC console-server configuration and runtime state."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def _echo_table(rows: list[list[Any]], headers: list[str], empty_message: str) -
     context_settings=CONTEXT_SETTINGS,
 )
 def console_server() -> None:
-    """Show console-server configuration from ConfigDB."""
+    """Show console-server configuration and runtime state."""
 
 
 @console_server.command("port")
@@ -132,3 +132,41 @@ def group() -> None:
         ["Group", "Role", "Ports"],
         "No console-server groups configured.",
     )
+
+@console_server.command("sessions")
+def sessions() -> None:
+    """Show active console-server sessions. Times are displayed in seconds."""
+
+    try:
+        records = create_default_manager().get_sessions()
+    except ConsoleServerManagerError as error:
+        raise click.ClickException(str(error)) from error
+
+    rows = [
+        [
+            _display_value(record.get("line")),
+            _display_value(record.get("mode")),
+            _display_value(record.get("user")),
+            _display_value(record.get("role")),
+            _display_value(record.get("ip")),
+            _display_value(record.get("port")),
+            _display_value(record.get("idle_timeout")),
+            _display_value(record.get("time_left")),
+        ]
+        for record in records
+    ]
+    _echo_table(
+        rows,
+        [
+            "Line",
+            "Mode",
+            "User",
+            "Role",
+            "Client IP",
+            "Client Port",
+            "Idle Timeout",
+            "Time Left",
+        ],
+        "No active console-server sessions.",
+    )
+

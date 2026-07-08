@@ -12,6 +12,7 @@ class FakeManager:
         self.ports = []
         self.users = []
         self.groups = []
+        self.sessions = []
         self.error = None
 
     def _return(self, value):
@@ -27,6 +28,9 @@ class FakeManager:
 
     def get_group_configs(self):
         return self._return(self.groups)
+
+    def get_sessions(self):
+        return self._return(self.sessions)
 
 
 def _install_manager(monkeypatch, manager):
@@ -107,6 +111,7 @@ def test_show_commands_report_empty_tables(monkeypatch):
         ("port", "No console-server ports configured."),
         ("user", "No console-server users configured."),
         ("group", "No console-server groups configured."),
+        ("sessions", "No active console-server sessions."),
     ]:
         result = runner.invoke(console_server, [command])
         assert result.exit_code == 0, result.output
@@ -122,3 +127,55 @@ def test_show_manager_error_is_reported_as_click_error(monkeypatch):
 
     assert result.exit_code != 0
     assert "ConfigDB unavailable" in result.output
+
+def test_show_sessions_formats_only_public_runtime_fields(monkeypatch):
+    manager = FakeManager()
+    manager.sessions = [
+        {
+            "line": 1,
+            "mode": "shared",
+            "user": "admin",
+            "role": "writer",
+            "ip": "10.19.252.103",
+            "port": 36736,
+            "idle_timeout": 600,
+            "time_left": 479,
+        },
+        {
+            "line": 1,
+            "mode": "shared",
+            "user": "admin",
+            "role": "writer",
+            "ip": "127.0.0.1",
+            "port": 38454,
+            "idle_timeout": 600,
+            "time_left": 149,
+        },
+    ]
+    _install_manager(monkeypatch, manager)
+
+    result = CliRunner().invoke(console_server, ["sessions"])
+
+    assert result.exit_code == 0, result.output
+    assert "Line" in result.output
+    assert "Client IP" in result.output
+    assert "Idle Timeout" in result.output
+    assert "Time Left" in result.output
+    assert "10.19.252.103" in result.output
+    assert "127.0.0.1" in result.output
+    assert "36736" in result.output
+    assert "38454" in result.output
+    assert "session_id" not in result.output.lower()
+    assert "last_activity" not in result.output.lower()
+
+
+def test_show_sessions_manager_error_is_reported(monkeypatch):
+    manager = FakeManager()
+    manager.error = ConsoleServerManagerError("seriald unavailable")
+    _install_manager(monkeypatch, manager)
+
+    result = CliRunner().invoke(console_server, ["sessions"])
+
+    assert result.exit_code != 0
+    assert "seriald unavailable" in result.output
+

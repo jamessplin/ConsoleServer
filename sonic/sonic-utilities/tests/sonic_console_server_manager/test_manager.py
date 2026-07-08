@@ -147,6 +147,9 @@ class FakeConsoleCli:
         self.fail = False
         self.interactive_fail = False
         self.interactive_returncode = 0
+        self.returncode = 0
+        self.stdout = ""
+        self.stderr = ""
         self.events = events
 
     def run(self, arguments):
@@ -156,7 +159,7 @@ class FakeConsoleCli:
         from sonic_console_server_manager.manager import CommandResult
         if self.fail:
             return CommandResult(1, "", "console-cli failed")
-        return CommandResult(0, "", "")
+        return CommandResult(self.returncode, self.stdout, self.stderr)
 
     def run_interactive(self, arguments):
         self.interactive_calls.append(list(arguments))
@@ -1264,3 +1267,122 @@ def test_console_cli_run_interactive_inherits_terminal(
             {"check": False},
         )
     ]
+
+def test_get_sessions_calls_console_cli_and_flattens_active_clients():
+    console_cli = FakeConsoleCli()
+    console_cli.stdout = """
+{
+  "op": "status",
+  "lines": [
+    {
+      "line": 1,
+      "mode": "shared",
+      "clients": [
+        {
+          "session_id": "hidden-session-id",
+          "user": "admin",
+          "role": "writer",
+          "ip": "10.19.252.103",
+          "port": 36736,
+          "idle_timeout": 600,
+          "last_activity": 1783509387.8,
+          "time_left": 479
+        },
+        {
+          "session_id": "another-hidden-id",
+          "user": "admin",
+          "role": "writer",
+          "ip": "127.0.0.1",
+          "port": 38454,
+          "idle_timeout": 600,
+          "last_activity": 1783509057.3,
+          "time_left": 149
+        }
+      ]
+    },
+    {
+      "line": 2,
+      "mode": "shared",
+      "clients": []
+    }
+  ]
+}
+"""
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(),
+        port_provider=FakePortProvider({1, 2}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    assert manager.get_sessions() == [
+        {
+            "line": 1,
+            "mode": "shared",
+            "user": "admin",
+            "role": "writer",
+            "ip": "10.19.252.103",
+            "port": 36736,
+            "idle_timeout": 600,
+            "time_left": 479,
+        },
+        {
+            "line": 1,
+            "mode": "shared",
+            "user": "admin",
+            "role": "writer",
+            "ip": "127.0.0.1",
+            "port": 38454,
+            "idle_timeout": 600,
+            "time_left": 149,
+        },
+    ]
+    assert console_cli.calls == [["show", "sessions", "--json"]]
+
+
+def test_get_sessions_returns_empty_list_when_no_clients_are_active():
+    console_cli = FakeConsoleCli()
+    console_cli.stdout = '{"op":"status","lines":[{"line":1,"mode":"shared","clients":[]}]}'
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(),
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    assert manager.get_sessions() == []
+
+
+def test_get_sessions_rejects_invalid_json():
+    console_cli = FakeConsoleCli()
+    console_cli.stdout = "not-json"
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(),
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    with pytest.raises(
+        manager_module.ConsoleServerCommandError,
+        match="invalid session JSON",
+    ):
+        manager.get_sessions()
+
+
+def test_get_sessions_rejects_missing_lines_list():
+    console_cli = FakeConsoleCli()
+    console_cli.stdout = '{"op":"status"}'
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(),
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    with pytest.raises(
+        manager_module.ConsoleServerCommandError,
+        match="lines list",
+    ):
+        manager.get_sessions()
+
