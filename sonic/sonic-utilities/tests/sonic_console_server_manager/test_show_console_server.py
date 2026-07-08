@@ -13,6 +13,12 @@ class FakeManager:
         self.users = []
         self.groups = []
         self.sessions = []
+        self.product_info = {
+            "base_port": 35000,
+            "max_ports": 24,
+            "max_users": 16,
+            "max_groups": 16,
+        }
         self.error = None
 
     def _return(self, value):
@@ -31,6 +37,9 @@ class FakeManager:
 
     def get_sessions(self):
         return self._return(self.sessions)
+
+    def get_product_info(self):
+        return self._return(self.product_info)
 
 
 def _install_manager(monkeypatch, manager):
@@ -63,10 +72,11 @@ def test_show_port_formats_config_db_fields(monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "Line" in result.output
+    assert "TCP Port" in result.output
+    assert "35001" in result.output
     assert "Flowcontrol" in result.output
     assert "COM1" in result.output
     assert "115200" in result.output
-    assert "tcp_port" not in result.output
     assert "interface" not in result.output.lower()
 
 
@@ -179,3 +189,28 @@ def test_show_sessions_manager_error_is_reported(monkeypatch):
     assert result.exit_code != 0
     assert "seriald unavailable" in result.output
 
+
+
+def test_show_product_info_formats_limits(monkeypatch):
+    manager = FakeManager()
+    _install_manager(monkeypatch, manager)
+
+    result = CliRunner().invoke(console_server, ["product-info"])
+
+    assert result.exit_code == 0, result.output
+    assert "Product Configuration & Limits" in result.output
+    assert "Base Port  : 35000" in result.output
+    assert "Max Ports  : 24" in result.output
+    assert "Max Users  : 16" in result.output
+    assert "Max Groups : 16" in result.output
+
+
+def test_show_product_info_manager_error_is_reported(monkeypatch):
+    manager = FakeManager()
+    manager.error = ConsoleServerManagerError("product info unavailable")
+    _install_manager(monkeypatch, manager)
+
+    result = CliRunner().invoke(console_server, ["product-info"])
+
+    assert result.exit_code != 0
+    assert "product info unavailable" in result.output

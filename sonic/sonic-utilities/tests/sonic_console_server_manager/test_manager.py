@@ -10,6 +10,8 @@ from sonic_console_server_manager.manager import (
     GROUP_PORT_TABLE,
     GROUP_TABLE,
     PORT_TABLE,
+    PRODUCT_INFO_KEY,
+    PRODUCT_INFO_TABLE,
     USER_GROUP_TABLE,
     USER_TABLE,
     ConfigDbConsolePortProvider,
@@ -1386,3 +1388,203 @@ def test_get_sessions_rejects_missing_lines_list():
     ):
         manager.get_sessions()
 
+
+
+def test_get_product_info_uses_valid_config_db_cache_without_console_cli():
+    db = FakeConfigDb(
+        {
+            PRODUCT_INFO_TABLE: {
+                PRODUCT_INFO_KEY: {
+                    "base_port": "35000",
+                    "max_users": "16",
+                    "max_groups": "16",
+                    "max_ports": "24",
+                }
+            }
+        }
+    )
+    console_cli = FakeConsoleCli()
+    console_cli.fail = True
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    assert manager.get_product_info() == {
+        "base_port": 35000,
+        "max_users": 16,
+        "max_groups": 16,
+        "max_ports": 24,
+    }
+    assert console_cli.calls == []
+    assert db.direct_committed == []
+
+
+def test_get_product_info_falls_back_and_populates_missing_cache():
+    db = FakeConfigDb()
+    console_cli = FakeConsoleCli()
+    console_cli.stdout = (
+        '{"base_port":35000,"no_of_user":16,'
+        '"no_of_group":16,"no_of_port":24}'
+    )
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    expected = {
+        "base_port": 35000,
+        "max_users": 16,
+        "max_groups": 16,
+        "max_ports": 24,
+    }
+    assert manager.get_product_info() == expected
+    assert db.get_entry(PRODUCT_INFO_TABLE, PRODUCT_INFO_KEY) == expected
+    assert len(db.direct_committed) == 1
+
+    console_cli.fail = True
+    assert manager.get_product_info() == expected
+    assert console_cli.calls == [["show", "product-info", "--json"]]
+
+
+def test_get_product_info_replaces_invalid_cache_from_console_cli():
+    db = FakeConfigDb(
+        {
+            PRODUCT_INFO_TABLE: {
+                PRODUCT_INFO_KEY: {
+                    "base_port": "35000",
+                    "max_users": "16",
+                    "max_groups": "16",
+                    # max_ports intentionally missing
+                }
+            }
+        }
+    )
+    console_cli = FakeConsoleCli()
+    console_cli.stdout = (
+        '{"base_port":35000,"no_of_user":16,'
+        '"no_of_group":16,"no_of_port":24}'
+    )
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    assert manager.get_product_info()["max_ports"] == 24
+    assert db.get_entry(PRODUCT_INFO_TABLE, PRODUCT_INFO_KEY)["max_ports"] == 24
+    assert console_cli.calls == [["show", "product-info", "--json"]]
+
+
+def test_get_product_info_returns_live_data_when_cache_write_fails():
+    db = FakeConfigDb()
+    db.fail_commit = True
+    console_cli = FakeConsoleCli()
+    console_cli.stdout = (
+        '{"base_port":35000,"no_of_user":16,'
+        '"no_of_group":16,"no_of_port":24}'
+    )
+    manager = SonicConsoleServerManager(
+        config_db=db,
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    assert manager.get_product_info() == {
+        "base_port": 35000,
+        "max_users": 16,
+        "max_groups": 16,
+        "max_ports": 24,
+    }
+    assert db.get_entry(PRODUCT_INFO_TABLE, PRODUCT_INFO_KEY) == {}
+    assert console_cli.calls == [["show", "product-info", "--json"]]
+
+
+def test_get_product_info_calls_console_cli_and_normalizes_fields():
+    console_cli = FakeConsoleCli()
+    console_cli.stdout = (
+        '{"base_port":35000,"no_of_user":16,'
+        '"no_of_group":16,"no_of_port":24}'
+    )
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(),
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    assert manager.get_product_info() == {
+        "base_port": 35000,
+        "max_users": 16,
+        "max_groups": 16,
+        "max_ports": 24,
+    }
+    assert console_cli.calls == [["show", "product-info", "--json"]]
+
+
+def test_get_product_info_rejects_invalid_json():
+    console_cli = FakeConsoleCli()
+    console_cli.stdout = "not-json"
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(),
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    with pytest.raises(
+        manager_module.ConsoleServerCommandError,
+        match="invalid product-info JSON",
+    ):
+        manager.get_product_info()
+
+
+@pytest.mark.parametrize(
+    "payload,field",
+    [
+        ('{"base_port":35000,"no_of_user":16,"no_of_group":16}', "no_of_port"),
+        ('{"base_port":35000,"no_of_user":0,"no_of_group":16,"no_of_port":24}', "no_of_user"),
+        ('{"base_port":"bad","no_of_user":16,"no_of_group":16,"no_of_port":24}', "base_port"),
+    ],
+)
+def test_get_product_info_rejects_missing_or_invalid_fields(payload, field):
+    console_cli = FakeConsoleCli()
+    console_cli.stdout = payload
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(),
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    with pytest.raises(
+        manager_module.ConsoleServerCommandError,
+        match=field,
+    ):
+        manager.get_product_info()
+
+
+def test_get_product_info_rejects_tcp_port_overflow():
+    console_cli = FakeConsoleCli()
+    console_cli.stdout = (
+        '{"base_port":65530,"no_of_user":16,'
+        '"no_of_group":16,"no_of_port":24}'
+    )
+    manager = SonicConsoleServerManager(
+        config_db=FakeConfigDb(),
+        port_provider=FakePortProvider({1}),
+        status_backend=FakeStatus(),
+        console_cli_backend=console_cli,
+    )
+
+    with pytest.raises(
+        manager_module.ConsoleServerCommandError,
+        match="above 65535",
+    ):
+        manager.get_product_info()

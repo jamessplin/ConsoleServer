@@ -48,10 +48,13 @@ def port() -> None:
     """Show configured console ports."""
 
     try:
-        records = create_default_manager().get_port_configs()
+        manager = create_default_manager()
+        records = manager.get_port_configs()
+        product_info = manager.get_product_info()
     except ConsoleServerManagerError as error:
         raise click.ClickException(str(error)) from error
 
+    base_port = product_info["base_port"]
     fields = [
         "label",
         "mode",
@@ -64,7 +67,10 @@ def port() -> None:
         "flowcontrol",
     ]
     rows = [
-        [_display_value(record.get("port"))]
+        [
+            _display_value(record.get("port")),
+            _display_value(base_port + int(record["port"])),
+        ]
         + [_display_value(record.get(field)) for field in fields]
         for record in records
     ]
@@ -72,6 +78,7 @@ def port() -> None:
         rows,
         [
             "Line",
+            "TCP Port",
             "Label",
             "Mode",
             "Max Clients",
@@ -132,6 +139,23 @@ def group() -> None:
         ["Group", "Role", "Ports"],
         "No console-server groups configured.",
     )
+
+@console_server.command("product-info")
+def product_info() -> None:
+    """Show console-server product configuration and limits."""
+
+    try:
+        info = create_default_manager().get_product_info()
+    except ConsoleServerManagerError as error:
+        raise click.ClickException(str(error)) from error
+
+    click.echo("Product Configuration & Limits")
+    click.echo("------------------------------")
+    click.echo(f"Base Port  : {info['base_port']}")
+    click.echo(f"Max Ports  : {info['max_ports']}")
+    click.echo(f"Max Users  : {info['max_users']}")
+    click.echo(f"Max Groups : {info['max_groups']}")
+
 
 @console_server.command("sessions")
 def sessions() -> None:

@@ -27,6 +27,8 @@ GROUP_TABLE = "CONSOLE_SERVER_GROUP"
 GROUP_PORT_TABLE = "CONSOLE_SERVER_GROUP_PORT"
 USER_TABLE = "CONSOLE_SERVER_USER"
 USER_GROUP_TABLE = "CONSOLE_SERVER_USER_GROUP"
+PRODUCT_INFO_TABLE = "CONSOLE_SERVER_PRODUCT_INFO"
+PRODUCT_INFO_KEY = "global"
 
 PORT_FIELDS = {
     "baudrate",
@@ -993,6 +995,136 @@ class SonicConsoleServerManager:
             record["ports"] = sorted(memberships.get(group_name, set()))
             records.append(record)
         return records
+
+    @staticmethod
+    def _normalize_product_info(
+        payload: Mapping[str, Any],
+        *,
+        field_names: Mapping[str, str],
+        source_description: str,
+    ) -> dict[str, int]:
+        """Validate and normalize product information from one data source."""
+
+        normalized: dict[str, int] = {}
+        for target, source in field_names.items():
+            value = payload.get(source)
+            if isinstance(value, bool):
+                raise ConsoleServerCommandError(
+                    f"{source_description} contains invalid {source}"
+                )
+            try:
+                number = int(value)
+            except (TypeError, ValueError) as error:
+                raise ConsoleServerCommandError(
+                    f"{source_description} contains invalid {source}"
+                ) from error
+            if number < 1:
+                raise ConsoleServerCommandError(
+                    f"{source_description} contains invalid {source}"
+                )
+            normalized[target] = number
+
+        if normalized["base_port"] + normalized["max_ports"] > 65535:
+            raise ConsoleServerCommandError(
+                f"{source_description} defines TCP ports above 65535"
+            )
+
+        return normalized
+
+    def _get_cached_product_info(self) -> dict[str, int] | None:
+        """Return valid cached product info, or ``None`` when unavailable."""
+
+        try:
+            cached = self._config_db.get_entry(
+                PRODUCT_INFO_TABLE,
+                PRODUCT_INFO_KEY,
+            )
+        except Exception:
+            return None
+
+        if not cached:
+            return None
+
+        try:
+            return self._normalize_product_info(
+                cached,
+                field_names={
+                    "base_port": "base_port",
+                    "max_users": "max_users",
+                    "max_groups": "max_groups",
+                    "max_ports": "max_ports",
+                },
+                source_description=(
+                    f"{PRODUCT_INFO_TABLE}|{PRODUCT_INFO_KEY}"
+                ),
+            )
+        except ConsoleServerCommandError:
+            # An incomplete or stale cache must not block the live fallback.
+            return None
+
+    def _cache_product_info_best_effort(
+        self,
+        product_info: Mapping[str, int],
+    ) -> None:
+        """Try to cache valid product info without failing its caller."""
+
+        operation = ConfigDbOperation(
+            "set",
+            PRODUCT_INFO_TABLE,
+            PRODUCT_INFO_KEY,
+            {
+                "base_port": product_info["base_port"],
+                "max_ports": product_info["max_ports"],
+                "max_users": product_info["max_users"],
+                "max_groups": product_info["max_groups"],
+            },
+        )
+        try:
+            self._config_db.commit_direct([operation])
+        except Exception:
+            # Product info has already been obtained and validated. Caching is
+            # an optimization, so a write failure must not break a show command.
+            return
+
+    def get_product_info(self) -> dict[str, int]:
+        """Return product limits using ConfigDB as a read-through cache.
+
+        A complete, valid ``CONSOLE_SERVER_PRODUCT_INFO|global`` entry is used
+        immediately. If the entry is missing or invalid, the manager queries
+        the independent application's public JSON interface and attempts to
+        cache the normalized result. Cache writes are best effort: the live
+        product information is still returned when the write fails.
+        """
+
+        cached = self._get_cached_product_info()
+        if cached is not None:
+            return cached
+
+        result = self._run_console_cli(["show", "product-info", "--json"])
+        try:
+            payload = json.loads(result.stdout)
+        except (TypeError, json.JSONDecodeError) as error:
+            raise ConsoleServerCommandError(
+                "console-cli returned invalid product-info JSON"
+            ) from error
+
+        if not isinstance(payload, Mapping):
+            raise ConsoleServerCommandError(
+                "console-cli product-info JSON must be an object"
+            )
+
+        normalized = self._normalize_product_info(
+            payload,
+            field_names={
+                "base_port": "base_port",
+                "max_users": "no_of_user",
+                "max_groups": "no_of_group",
+                "max_ports": "no_of_port",
+            },
+            source_description="console-cli product-info JSON",
+        )
+        self._cache_product_info_best_effort(normalized)
+        return normalized
 
     def get_sessions(self) -> list[dict[str, Any]]:
         """Return active console-server sessions from the runtime daemon.
