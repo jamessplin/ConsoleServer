@@ -86,7 +86,7 @@ show/main.py patch
 
 python3 -m py_compile manager.py
 
-for port in 1 2 3 4; do
+for port in {1..24}; do
     sudo sonic-db-cli CONFIG_DB hmset \
         "CONSOLE_SERVER_PORT|${port}" \
         baudrate 115200 \
@@ -126,6 +126,73 @@ PYTHONPATH=. python3 -m pytest -v \
     tests/sonic_console_server_manager/test_console_server.py \
     tests/sonic_console_server_manager/test_show_console_server.py \
     tests/sonic_console_server_manager/test_connect_console_server.py
+
+
+
+src/sonic-config-engine/sonic-cfggen
+src/sonic-config-engine/console_server_config.py
+device/arm64-wnc_e6054-r0/wnc_e6054/console_server.json
+
+/usr/local/bin/sonic-cfggen
+/usr/local/lib/python3.11/dist-packages/console_server_config.py
+/usr/share/sonic/device/arm64-wnc_e6054-r0/wnc_e6054/console_server.json
+
+
+The lookup order is:
+
+1. --console-server-config <file>
+2. /usr/share/sonic/device/<platform>/<hwsku>/console_server.json
+3. /usr/share/sonic/device/<platform>/console_server.json
+
+
+console_server_config.py = reusable logic
+sonic-cfggen change      = small release-specific hook
+console_server.json      = platform/HWSKU data
+
+
+src/sonic-config-engine/console_server_config.py
+src/sonic-config-engine/sonic-cfggen
+src/sonic-config-engine/setup.py
+src/sonic-config-engine/tests/test_console_server_config.py
+device/arm64-wnc_e6054-r0/wnc_e6054/console_server.json
+generated_console_server_config_db_202511.json
+sonic-cfggen-202511.patch
+setup.py-202511.patch
+README_202511_console_server_cfggen.md
+
+
+james@sonic:~/tmp$ tree
+.
+├── device/wnc
+│   └── arm64-wnc_e6054-r0
+│       └── wnc_e6054
+│           └── console_server.json
+├── generated_console_server_config_db_202511.json
+├── README_202511_console_server_cfggen.md
+├── setup.py-202511.patch
+├── sonic-cfggen-202511.patch
+├── sonic_cfggen_console_server_impl_202511.zip
+└── src
+    └── sonic-config-engine
+        ├── console_server_config.py
+        ├── setup.py
+        ├── sonic-cfggen
+        └── tests
+            └── test_console_server_config.py
+
+
+cd sonic-utilities && \
+PYTHONPATH=. python3 -m pytest -v \
+    --confcutdir=tests/sonic_console_server_manager \
+    tests/sonic_console_server_manager/test_manager.py \
+    tests/sonic_console_server_manager/test_console_server.py \
+    tests/sonic_console_server_manager/test_show_console_server.py \
+    tests/sonic_console_server_manager/test_connect_console_server.py
+
+cd ../sonic-config-engine && \
+PYTHONPATH=. python3 -m pytest -v \
+    tests/test_console_server_config.py
+
 
 
 scp /home/james/tmp/manager.py admin@10.19.252.37:/tmp
