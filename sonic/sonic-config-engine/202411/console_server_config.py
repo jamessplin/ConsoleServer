@@ -56,9 +56,9 @@ REQUIRED_PORT_FIELDS = {
 
 ALLOWED_MODES = {"shared", "exclusive"}
 ALLOWED_PARITIES = {"none", "even", "odd"}
-ALLOWED_FLOWCONTROL = {"none", "hardware", "software"}
-ALLOWED_GROUP_ROLES = {"console_user", "admin"}
-ALLOWED_USER_ROLES = {"admin", "console_user"}
+ALLOWED_FLOWCONTROL = {"none", "rtscts", "xonxoff"}
+ALLOWED_GROUP_ROLES = {"console_user", "admin", "operator"}
+ALLOWED_USER_ROLES = {"admin", "console_user", "operator", "none"}
 ALLOWED_DATABITS = {5, 6, 7, 8}
 ALLOWED_STOPBITS = {1, 2}
 ALLOWED_BAUDRATES = {

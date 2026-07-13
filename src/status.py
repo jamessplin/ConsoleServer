@@ -192,7 +192,7 @@ async def main():
     sp_config_port.add_argument("--databits", type=int, choices=[5, 6, 7, 8], help="sets the data bits (5, 6, 7, 8)")
     sp_config_port.add_argument("--parity", choices=['none', 'even', 'odd', 'mark', 'space'], help="sets the parity")
     sp_config_port.add_argument("--stopbits", type=int, choices=[1, 2], help="sets the stop bits")
-    sp_config_port.add_argument("--flowcontrol", choices=['none', 'rtscts'], help="sets flow control")
+    sp_config_port.add_argument("--flowcontrol", choices=['none', 'rtscts', 'xonxoff'], help="sets flow control")
     sp_config_port.add_argument("-q", "--quiet", action="store_true", help="suppress output (ignored)")
 
     # New subparser for config-op

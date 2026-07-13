@@ -194,6 +194,69 @@ PYTHONPATH=. python3 -m pytest -v \
     tests/test_console_server_config.py
 
 
+cd /sonic/src/sonic-config-engine
+PYTHONPATH=. python3 ./sonic-cfggen \
+    -H \
+    -k wnc_e6054 \
+    --console-server-config /home/james/git/SoNiC_work/device/wnc/arm64-wnc_e6054-r0/wnc_e6054/console_server.json \
+    --print-data \
+    > /tmp/config_db_with_console_server_202511.json
+
+
+
+sonic-utilities/
+├── sonic_console_server_manager/
+│   ├── manager.py
+│   └── boot_apply.py
+├── scripts/
+│   └── console-server-config-apply
+└── tests/
+    └── sonic_console_server_manager/
+        └── test_boot_apply.py
+
+
+
+cd ~/git/ConsoleServer
+
+# Python syntax
+python3 -m py_compile \
+    sonic/sonic-config-engine/console_server_config.py \
+    sonic/sonic-config-engine/202411/console_server_config.py \
+    sonic/sonic-utilities/sonic_console_server_manager/boot_apply.py \
+    sonic/sonic-utilities/setup.py \
+    src/status.py
+
+# sonic-utilities
+cd sonic/sonic-utilities
+PYTHONPATH=. python3 -m pytest -v \
+    --confcutdir=tests/sonic_console_server_manager \
+    tests/sonic_console_server_manager/test_manager.py \
+    tests/sonic_console_server_manager/test_console_server.py \
+    tests/sonic_console_server_manager/test_show_console_server.py \
+    tests/sonic_console_server_manager/test_connect_console_server.py \
+    tests/sonic_console_server_manager/test_boot_apply.py
+
+# sonic-config-engine
+cd ../sonic-config-engine
+PYTHONPATH=. python3 -m pytest -v \
+    tests/test_console_server_config.py
+
+# YANG
+cd ../sonic-yang-models
+pyang -p yang-models \
+    yang-models/sonic-console-server.yang
+
+python3 setup.py build
+
+# Git quality checks
+cd ../../
+git diff --check
+git status --short
+
+
+
+
+
 
 scp /home/james/tmp/manager.py admin@10.19.252.37:/tmp
 YourPaSsWoRd

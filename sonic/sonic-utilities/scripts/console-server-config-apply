@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+"""SONiC one-shot entry point for replaying ConfigDB into seriald runtime."""
+
+from sonic_console_server_manager.boot_apply import main
+
+raise SystemExit(main())
