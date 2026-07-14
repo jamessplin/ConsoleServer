@@ -215,7 +215,73 @@ sonic-utilities/
         └── test_boot_apply.py
 
 
+=============
+File structure
+=============
+sonic
+├── device
+│   └── console_server.json
+├── doc
+│   ├── console_server_cli_reference.md
+│   ├── console_server_handoff_pack.md
+│   ├── console_server_test_plan.md
+│   └── known_issues.md
+├── files
+│   └── build_templates
+│       └── console-server-config-apply.service
+├── known_issues.md
+├── note.txt
+├── sonic-console-server.tree
+└── src
+    ├── sonic-config-engine
+    │   ├── 202411
+    │   │   ├── console_server_config.py
+    │   │   └── sonic-cfggen
+    │   ├── console_server_config.py
+    │   ├── setup.py
+    │   ├── sonic-cfggen
+    │   └── tests
+    │       └── test_console_server_config.py
+    ├── sonic-utilities
+    │   ├── config
+    │   │   ├── console_server.py
+    │   │   └── main.py
+    │   ├── connect
+    │   │   ├── console_server.py
+    │   │   └── main.py
+    │   ├── scripts
+    │   │   └── console-server-config-apply
+    │   ├── setup.py
+    │   ├── show
+    │   │   ├── console_server.py
+    │   │   └── main.py
+    │   ├── sonic_console_server_manager
+    │   │   ├── boot_apply.py
+    │   │   ├── __init__.py
+    │   │   └── manager.py
+    │   └── tests
+    │       └── sonic_console_server_manager
+    │           ├── test_boot_apply.py
+    │           ├── test_connect_console_server.py
+    │           ├── test_console_server.py
+    │           ├── test_manager.py
+    │           └── test_show_console_server.py
+    └── sonic-yang-models
+        ├── setup.py
+        ├── tests
+        │   └── yang_model_tests
+        │       ├── tests
+        │       │   └── console_server.json
+        │       └── tests_config
+        │           └── console_server.json
+        └── yang-models
+            └── sonic-console-server.yang
 
+
+
+=============
+Test
+=============
 cd ~/git/ConsoleServer
 
 # Python syntax
