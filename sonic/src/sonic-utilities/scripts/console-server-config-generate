@@ -1,0 +1,8 @@
+#!/usr/bin/python3
+"""SONiC console-server runtime configuration generator entry point."""
+
+from sonic_console_server_manager.config_generate import main
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

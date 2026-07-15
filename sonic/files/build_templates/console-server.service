@@ -1,0 +1,25 @@
+[Unit]
+Description=SONiC Console Server
+Requires=config-setup.service
+After=config-setup.service network.target
+Conflicts=seriald.service
+PartOf=sonic.target
+
+[Service]
+Type=simple
+User=root
+RuntimeDirectory=seriald
+RuntimeDirectoryMode=0755
+
+ExecStartPre=/usr/local/bin/console-server-config-generate \
+    --bootstrap-config /etc/seriald/config.json \
+    --output /run/seriald/config.json
+
+ExecStart=/usr/bin/python3 -u /usr/local/bin/server.py \
+    --config /run/seriald/config.json
+
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=sonic.target

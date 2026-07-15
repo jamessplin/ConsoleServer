@@ -185,7 +185,7 @@ setup(
         'scripts/sonic-kdump-config',
         'scripts/sonic-bootchart',
         'scripts/centralize_database',
-        'scripts/console-server-config-apply',
+        'scripts/console-server-config-generate',
         'scripts/null_route_helper',
         'scripts/coredump_gen_handler.py',
         'scripts/memory_threshold_check.py',
