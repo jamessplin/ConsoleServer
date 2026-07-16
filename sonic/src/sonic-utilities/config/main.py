@@ -1079,6 +1079,33 @@ def _wait_for_monit_service_monitored(service, timeout=10):
     log.log_error("Monit monitor action for '{}' did not complete within {} seconds".format(service, timeout))
 
 
+def _restart_console_server_after_load():
+    """Restart the SONiC console-server after a successful config load.
+
+    The standalone service may be absent or intentionally disabled on images
+    that do not include the SONiC console-server integration. In those cases,
+    config load keeps its existing behavior and no action is taken.
+    """
+    service = 'console-server.service'
+
+    _, enabled_rc = clicommon.run_command(
+        ['systemctl', 'is-enabled', '--quiet', service],
+        return_cmd=True,
+    )
+    if enabled_rc != 0:
+        log.log_info(
+            "Skipping console-server refresh after config load: {} is not enabled".format(service)
+        )
+        return
+
+    click.echo("Restarting console-server service ...")
+    log.log_notice("'load' restarting {} after successful ConfigDB update".format(service))
+    clicommon.run_command(
+        ['systemctl', 'restart', service],
+        display_cmd=True,
+    )
+
+
 def _restart_services():
     last_interface_config_timestamp = get_service_finish_timestamp('interfaces-config')
     last_networking_timestamp = get_service_finish_timestamp('networking')
@@ -1914,6 +1941,8 @@ def load(filename, yes):
 
         log.log_info("'load' executing...")
         clicommon.run_command(command, display_cmd=True)
+
+    _restart_console_server_after_load()
 
 def print_dry_run_message(dry_run):
     if dry_run:

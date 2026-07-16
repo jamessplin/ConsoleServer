@@ -329,3 +329,10 @@ git status --short
 
 scp /home/james/tmp/manager.py admin@10.19.252.37:/tmp
 YourPaSsWoRd
+
+python3 -m json.tool \
+
+/tmp/config_load_original.json \
+
+>/dev/null
+
