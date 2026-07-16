@@ -1,0 +1,15 @@
+TODO: Relocate test_config_load_console_server.py to the existing config/main.py test suite.
+
+The test currently lives under tests/sonic_console_server_manager, but importing
+config.main requires the full sonic-utilities config test environment and its
+dependencies. The lightweight console-server manager test harness is not the
+correct location.
+
+Keep these test cases when relocating:
+- enabled console-server.service is restarted;
+- disabled or absent service is skipped;
+- successful config load restarts the service exactly once;
+- missing config file does not restart the service;
+- sonic-cfggen failure does not restart the service.
+
+The live-switch test has already passed.
