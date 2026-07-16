@@ -1,0 +1,7 @@
+console-server (1.0.0) unstable; urgency=medium
+
+  * Initial SONiC-targeted Debian package.
+  * Install seriald.service without enabling or starting it.
+  * Preserve /etc/seriald/config.json as a conffile.
+
+ -- ConsoleServer Maintainers <maintainers@example.com>  Thu, 16 Jul 2026 11:00:00 +0800

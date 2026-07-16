@@ -1,0 +1,9 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: ConsoleServer
+Source: https://dev.azure.com/techdatacorp/SoNiC/_git/ConsoleServer
+
+Files: *
+Copyright: 2026 ConsoleServer contributors
+License: Proprietary
+ This software is proprietary. Redistribution and use are subject to the
+ terms established by the copyright holder.

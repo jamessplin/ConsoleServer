@@ -1,0 +1,35 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	:
+
+override_dh_auto_test:
+	# The existing shell tests require a live system, root privileges,
+	# systemd, user management, and serial devices. Run them separately.
+	:
+
+override_dh_auto_install:
+	install -d debian/console-server/usr/local/bin
+	install -d debian/console-server/etc/seriald
+	install -d debian/console-server/lib/systemd/system
+
+	install -m 0755 src/client.py \
+		debian/console-server/usr/local/bin/seriald-client
+	install -m 0755 src/console_cli.py \
+		debian/console-server/usr/local/bin/console-cli
+	install -m 0755 src/status.py \
+		debian/console-server/usr/local/bin/seriald-status
+	install -m 0755 src/server.py \
+		debian/console-server/usr/local/bin/server.py
+	install -m 0755 src/setup_ssh_dispatch.py \
+		debian/console-server/usr/local/bin/setup_ssh_dispatch.py
+	install -m 0755 src/console-ssh-dispatch.sh \
+		debian/console-server/usr/local/bin/console-ssh-dispatch
+
+	install -m 0644 config/config.json \
+		debian/console-server/etc/seriald/config.json
+	install -m 0644 service/seriald.service \
+		debian/console-server/lib/systemd/system/seriald.service

@@ -1,0 +1,26 @@
+Source: console-server
+Section: admin
+Priority: optional
+Maintainer: ConsoleServer Maintainers <maintainers@example.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: console-server
+Architecture: all
+Depends:
+ ${misc:Depends},
+ openssh-server,
+ passwd,
+ procps,
+ python3,
+ python3-click,
+ python3-passlib,
+ python3-serial,
+ ser2net,
+ sudo
+Description: Serial console server application for SONiC
+ Installs the independent serial console server application, command-line
+ tools, bootstrap configuration, SSH dispatch helper, and standalone
+ seriald systemd unit. The package does not enable or start seriald.service;
+ SONiC uses its separate console-server.service lifecycle.
