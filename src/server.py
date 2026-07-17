@@ -441,7 +441,7 @@ class SerialDaemon:
             with open(cfg_path, "w") as f:
                 f.write(config_content)
 
-            cmd = ["sudo", "/usr/sbin/ser2net", "-c", cfg_path]
+            cmd = ["/usr/sbin/ser2net", "-n", "-c", cfg_path]
             logging.info(f"Starting ser2net for line {line_id} on port {ser2net_port}...")
 
             process = await asyncio.create_subprocess_exec(
@@ -458,48 +458,49 @@ class SerialDaemon:
             logging.error(f"Failed to start ser2net for line {line_id}: {e}")
 
     async def stop_ser2net_for_line(self, line_id: int):
-        """Stop the ser2net process for a specific line."""
-        # Also try to kill any orphaned process by config file path
-        cfg_path = os.path.join("/tmp/seriald_ser2net_configs", f"cs{line_id}.yaml")
-        try:
-            # Use pkill to find and terminate the process using the specific config file.
-            # This is more robust against orphaned processes.
-            pkill_cmd = ["sudo", "pkill", "-f", f"ser2net -c {cfg_path}"]
-            logging.info(f"Running command to clean up ser2net for line {line_id}: {' '.join(pkill_cmd)}")
-            proc = await asyncio.create_subprocess_exec(*pkill_cmd)
-            await proc.wait()
-            # A non-zero return code is okay, it just means no process was found
-        except Exception as e:
-            logging.error(f"Failed to run pkill for line {line_id}: {e!r}")
+        """Stop the tracked ser2net process for a specific line."""
+        process = self.ser2net_processes.pop(line_id, None)
+        if process is None:
+            logging.debug(f"No tracked ser2net process for line {line_id}.")
+            return
 
-        if line_id in self.ser2net_processes:
-            process = self.ser2net_processes.pop(line_id)
-            logging.info(f"Stopping ser2net for line {line_id} (PID {process.pid})...")
+        if process.returncode is not None:
+            logging.info(
+                f"ser2net for line {line_id} already exited "
+                f"with status {process.returncode}."
+            )
+            return
+
+        logging.info(f"Stopping ser2net for line {line_id} (PID {process.pid})...")
+        try:
+            process.terminate()
             try:
-                # First, try a graceful shutdown
-                process.terminate()
-                try:
-                    # Wait for a short timeout
-                    await asyncio.wait_for(process.wait(), timeout=1.0)
-                    logging.info(f"ser2net for line {line_id} terminated gracefully.")
-                    return
-                except asyncio.TimeoutError:
-                    # If it doesn't terminate, force kill it
-                    logging.warning(f"ser2net for line {line_id} did not terminate gracefully, killing.")
+                await asyncio.wait_for(process.wait(), timeout=5.0)
+                logging.info(f"ser2net for line {line_id} terminated gracefully.")
+            except asyncio.TimeoutError:
+                logging.warning(
+                    f"ser2net for line {line_id} did not terminate gracefully; "
+                    f"killing PID {process.pid}."
+                )
+                process.kill()
+                await process.wait()
+                logging.info(f"ser2net for line {line_id} killed.")
+        except ProcessLookupError:
+            # The child may exit between the returncode check and terminate().
+            await process.wait()
+            logging.info(f"ser2net for line {line_id} had already exited.")
+        except Exception as e:
+            logging.error(f"Failed to stop ser2net for line {line_id}: {e!r}")
+            try:
+                if process.returncode is None:
                     process.kill()
                     await process.wait()
-                    logging.info(f"ser2net for line {line_id} killed.")
             except ProcessLookupError:
-                logging.warning(f"ser2net process for line {line_id} (PID {process.pid}) not found. It may have already exited.")
-            except Exception as e:
-                logging.error(f"Failed to stop ser2net for line {line_id}: {e!r}")
-                # Ensure it's killed even on other errors
-                try:
-                    if process.returncode is None:
-                        process.kill()
-                        await process.wait()
-                except Exception as kill_e:
-                    logging.error(f"Failed to force kill ser2net for line {line_id}: {kill_e}")
+                await process.wait()
+            except Exception as kill_e:
+                logging.error(
+                    f"Failed to force kill ser2net for line {line_id}: {kill_e!r}"
+                )
 
     async def _stop_ser2net_instances(self):
         """Terminate all managed ser2net subprocesses."""

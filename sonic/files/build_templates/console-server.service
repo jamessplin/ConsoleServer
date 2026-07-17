@@ -20,6 +20,7 @@ ExecStart=/usr/bin/python3 -u /usr/local/bin/server.py \
 
 Restart=on-failure
 RestartSec=3
+KillMode=control-group
 
 [Install]
 WantedBy=sonic.target
