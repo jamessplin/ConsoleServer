@@ -357,5 +357,14 @@ DEB=$(readlink -f ../console-server_1.0.0_all.deb)
 sudo apt install -y --reinstall "$DEB"
 
 
-james@jamesubuntu:~/git/ConsoleServer$ sha256sum "$DEB"
-a9dab1b5d8e758dd462c3eaa7c1252355a1a48c4cedd119c8a23963864d56542  /home/james/git/console-server_1.0.0_all.deb
+When SONiC builds the package, it will effectively run something equivalent to:
+
+cd src/console-server
+dpkg-buildpackage -us -uc -b
+
+Then dpkg-buildpackage invokes:
+
+debian/rules clean
+debian/rules binary
+
+Your debian/rules handles the actual packaging.
