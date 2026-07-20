@@ -1,14 +1,16 @@
 ConsoleServer Debian packaging policy
 =====================================
 
-This package is intended for installation into a SONiC image.
+This package is intended for inclusion in a SONiC image.
 
 It installs seriald.service but deliberately does not use dh_installsystemd,
-and it does not enable or start seriald.service. SONiC installs and enables
-its separate console-server.service under sonic.target.
+and it does not enable or start seriald.service.
+
+The SONiC image build installs and enables a separate
+console-server.service under sonic.target.
 
 Standalone Linux installation continues to use the repository Makefile and
-./console installer.
+the ./console installer.
 
-The maintainer identity and copyright/license text in debian/ should be
+The maintainer identity and copyright/license text under debian/ must be
 updated to the project's official values before release.

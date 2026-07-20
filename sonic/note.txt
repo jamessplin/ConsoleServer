@@ -368,3 +368,112 @@ debian/rules clean
 debian/rules binary
 
 Your debian/rules handles the actual packaging.
+
+=============================================================
+# Build and Install the ConsoleServer Debian Package
+
+## Build the package
+
+From the SONiC source tree:
+
+```bash
+cd src/console-server
+fakeroot debian/rules clean
+dpkg-buildpackage -us -uc -b
+```
+
+The generated package is created in the parent directory:
+
+```text
+../console-server_1.0.0_all.deb
+```
+
+Set the package path:
+
+```bash
+DEB=$(readlink -f ../console-server_1.0.0_all.deb)
+echo "$DEB"
+```
+
+## Install the package
+
+For a controlled installation when all dependencies are already available:
+
+```bash
+sudo dpkg -i "$DEB"
+```
+
+To install the package and automatically resolve dependencies:
+
+```bash
+sudo apt install -y "$DEB"
+```
+
+Verify:
+
+```bash
+dpkg-query -W -f='${Package} ${Version} ${Architecture} ${Status}\n' \
+    console-server
+```
+
+Expected:
+
+```text
+console-server 1.0.0 all install ok installed
+```
+
+## Remove the package
+
+Remove the package but preserve configuration files:
+
+```bash
+sudo dpkg -r console-server
+```
+
+Remove the package and purge its configuration files:
+
+```bash
+sudo dpkg -P console-server
+```
+
+## Reinstall the package
+
+```bash
+sudo dpkg -i "$DEB"
+```
+
+To restore a package conffile that was deliberately deleted:
+
+```bash
+sudo dpkg --force-confmiss -i "$DEB"
+```
+
+## SONiC service policy
+
+Installing the package does not enable or start `seriald.service`.
+
+After installation, the expected state is:
+
+```bash
+systemctl is-enabled seriald.service || true
+systemctl is-active seriald.service || true
+```
+
+Expected:
+
+```text
+disabled
+inactive
+```
+
+SONiC starts ConsoleServer through:
+
+```text
+console-server.service
+```
+
+not through:
+
+```text
+seriald.service
+```
