@@ -477,3 +477,18 @@ not through:
 ```text
 seriald.service
 ```
+
+
+cd ~/git/SoNiC_work
+
+cd ~/git/SoNiC_work
+
+rm -f \
+    target/sonic-marvell-prestera-arm64.bin \
+    target/sonic-marvell-prestera-arm64.bin__marvell-prestera__rfs.squashfs \
+    target/sonic-marvell-prestera-arm64.bin__marvell-prestera__rfs.squashfs.log \
+    target/sonic-marvell-prestera-arm64.bin.log
+
+make target/sonic-marvell-prestera-arm64.bin
+
+
