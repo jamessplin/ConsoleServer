@@ -492,3 +492,5 @@ rm -f \
 make target/sonic-marvell-prestera-arm64.bin
 
 
+make -s showconfig | grep -E 'BLDENV|CONFIGURED_PLATFORM|CONFIGURED_ARCH'
+
