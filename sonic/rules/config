@@ -147,15 +147,14 @@ ENABLE_HOST_SERVICE_ON_START = y
 # INCLUDE_RESTAPI - build docker-sonic-restapi for configuring the switch using REST APIs
 INCLUDE_RESTAPI ?= n
 
-# INCLUDE_CONSOLE_SERVER - build host-side console server package
-# Note: this requires src/console-server to be present in the SONiC source tree.
-INCLUDE_CONSOLE_SERVER ?= y
-
 # INCLUDE_NAT - build docker-nat for nat support
 INCLUDE_NAT = y
 
 # INCLUDE_DHCP_RELAY - build and install dhcp-relay package
 INCLUDE_DHCP_RELAY = y
+
+# INCLUDE_CONSOLE_SERVER - build host-side console server package
+INCLUDE_CONSOLE_SERVER ?= y
 
 # INCLUDE_DHCP_SERVER - build dhcp-server package and enable based on config_db.json
 INCLUDE_DHCP_SERVER ?= n

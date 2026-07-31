@@ -303,4 +303,3 @@ def user_delete(username: str) -> None:
         manager.delete_user(username)
     except ConsoleServerManagerError as error:
         raise click.ClickException(str(error)) from error
-

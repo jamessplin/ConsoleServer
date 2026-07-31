@@ -193,4 +193,3 @@ def sessions() -> None:
         ],
         "No active console-server sessions.",
     )
-
