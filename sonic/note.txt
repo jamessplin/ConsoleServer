@@ -494,3 +494,18 @@ make target/sonic-marvell-prestera-arm64.bin
 
 make -s showconfig | grep -E 'BLDENV|CONFIGURED_PLATFORM|CONFIGURED_ARCH'
 
+
+initialize it from the new parent branch:
+
+cd ~/git/SoNiC
+git submodule update --init src/sonic-utilities
+
+
+After Git checks out the submodules to their pinned, detached HEAD states, make init typically triggers the application of patch files (often located in src/<submodule-name>/patch/) directly on top of those commits.
+
+cd ~/git/SoNiC
+
+set -o pipefail
+
+make target/sonic-marvell-prestera-arm64.bin \
+    2>&1 | tee build-sonic-marvell-prestera-arm64.log
