@@ -26,8 +26,13 @@ override_dh_auto_install:
 		debian/console-server/usr/local/bin/server.py
 	install -m 0755 src/setup_ssh_dispatch.py \
 		debian/console-server/usr/local/bin/setup_ssh_dispatch.py
-	install -m 0755 src/console-ssh-dispatch.sh \
-		debian/console-server/usr/local/bin/console-ssh-dispatch
+
+	BASE_PORT="$$(python3 config/get_base_port.py config/config.json)"; \
+        sed "s/{{BASE_PORT}}/$${BASE_PORT}/g" \
+                src/console-ssh-dispatch.sh.j2 \
+                > debian/console-server/usr/local/bin/console-ssh-dispatch; \
+        chmod 0755 \
+                debian/console-server/usr/local/bin/console-ssh-dispatch
 
 	install -m 0644 config/config.json \
 		debian/console-server/etc/seriald/config.json

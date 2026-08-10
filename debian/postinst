@@ -1,0 +1,112 @@
+#!/bin/sh
+set -e
+
+OLD_VERSION="${2:-}"
+
+CONFIG=/etc/seriald/config.json
+SETUP=/usr/local/bin/setup_ssh_dispatch.py
+PRIMARY_SERVICE=sshd.service
+SECOND_SERVICE=ssh-seriald2.service
+SECOND_CONFIG=/etc/ssh/sshd_config_seriald2
+
+case "$1" in
+    configure)
+        ;;
+    *)
+        exit 0
+        ;;
+esac
+
+if [ ! -f "$CONFIG" ]; then
+    echo "console-server: missing $CONFIG; skipping SSH setup" >&2
+    exit 0
+fi
+
+if [ ! -x "$SETUP" ]; then
+    echo "console-server: missing $SETUP; skipping SSH setup" >&2
+    exit 0
+fi
+
+PRODUCT_INFO="$(python3 - "$CONFIG" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    config = json.load(stream)
+
+info = config["info"]
+
+base_port = int(info["base_port"])
+port_count = int(info["no_of_port"])
+
+if base_port < 1:
+    raise ValueError("base_port must be positive")
+
+if port_count < 1:
+    raise ValueError("no_of_port must be positive")
+
+if base_port + port_count > 65535:
+    raise ValueError("SSH port range exceeds 65535")
+
+print(base_port, port_count)
+PY
+)" || {
+    echo "console-server: invalid $CONFIG" >&2
+    exit 1
+}
+
+set -- $PRODUCT_INFO
+BASE_PORT="$1"
+PORT_COUNT="$2"
+
+START_PORT=$((BASE_PORT + 1))
+END_PORT=$((BASE_PORT + PORT_COUNT))
+
+set -- \
+    --start "$START_PORT" \
+    --end "$END_PORT" \
+    --address-family inet \
+    --port22-dualstack \
+    --max-ports-per-sshd 16
+
+if [ "$PORT_COUNT" -gt 12 ]; then
+    set -- "$@" \
+        --split-at-port "$((BASE_PORT + 12))" \
+        --enable-second-sshd \
+        --second-sshd-config "$SECOND_CONFIG" \
+        --second-sshd-service "$SECOND_SERVICE"
+fi
+
+# Generate persistent SSH configuration only.
+# Service enable/start/reload is handled by this maintainer script.
+"$SETUP" "$@" --offline
+
+# Enable the secondary sshd for normal boot.
+if [ "$PORT_COUNT" -gt 12 ] &&
+   command -v deb-systemd-helper >/dev/null 2>&1; then
+    deb-systemd-helper unmask "$SECOND_SERVICE" >/dev/null || true
+    deb-systemd-helper enable "$SECOND_SERVICE" >/dev/null || true
+fi
+
+# During SONiC image construction there is no running systemd instance.
+# On a live system, apply the generated SSH configuration immediately.
+if [ -d /run/systemd/system ]; then
+    systemctl --system daemon-reload >/dev/null || true
+
+    if [ "$PORT_COUNT" -gt 12 ] &&
+       command -v deb-systemd-invoke >/dev/null 2>&1; then
+        if [ -n "$OLD_VERSION" ]; then
+            deb-systemd-invoke restart "$SECOND_SERVICE" >/dev/null || true
+        else
+            deb-systemd-invoke start "$SECOND_SERVICE" >/dev/null || true
+        fi
+    fi
+
+    if command -v deb-systemd-invoke >/dev/null 2>&1; then
+        deb-systemd-invoke reload "$PRIMARY_SERVICE" >/dev/null || true
+    else
+        systemctl reload "$PRIMARY_SERVICE" >/dev/null || true
+    fi
+fi
+
+exit 0

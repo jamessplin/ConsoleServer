@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -83,21 +82,6 @@ def add_user_to_group(user, group, dry_run=False):
     run(["usermod", "-aG", group, user], dry_run=dry_run)
 
 
-def install_dispatch_wrapper(repo_dir, dry_run=False):
-    src = Path(repo_dir) / "console-ssh-dispatch.sh"
-    dst = Path("/usr/local/bin/console-ssh-dispatch")
-    if not src.is_file():
-        qprint(f"Dispatch wrapper not found at {src}", file=sys.stderr)
-        sys.exit(2)
-    if dry_run:
-        qprint(f"DRY-RUN: install -m 0755 {src} {dst}")
-    else:
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
-        os.chmod(dst, 0o755)
-        qprint(f"Installed {dst}")
-
-
 def build_config(
     start_port,
     end_port,
@@ -143,7 +127,7 @@ def build_config(
         lines.append("")
     # Direct attach via dispatch wrapper (all users)
     lines.append("# 2) Direct attach via dispatch wrapper (all users)")
-    lines.append("#    Computes --line from target port (line = port - 20000)")
+    lines.append("#    Computes --line from the target SSH port")
     for p in ports:
         lines.append(f"Match LocalPort {p}")
         lines.append("    ForceCommand /usr/local/bin/console-ssh-dispatch")
@@ -228,7 +212,16 @@ def write_file(path: str, content: str, dry_run: bool = False):
     qprint(f"Wrote {path}")
 
 
-def create_secondary_sshd(start_port: int, end_port: int, address_family: str, config_path: str, service_name: str, group: str, dry_run: bool = False):
+def create_secondary_sshd(
+    start_port: int,
+    end_port: int,
+    address_family: str,
+    config_path: str,
+    service_name: str,
+    group: str,
+    dry_run: bool = False,
+    offline: bool = False,
+):
     qprint(f"Creating secondary sshd instance for ports {start_port}..{end_port}")
     cfg = build_config(start_port, end_port, group=group, include_ports=True, address_family=address_family, include_port22=False)
     write_file(config_path, cfg, dry_run=dry_run)
@@ -248,7 +241,9 @@ Restart=on-failure
 WantedBy=multi-user.target
 """.strip().format(config_path=config_path)
     write_file(unit_path, unit_content, dry_run=dry_run)
-    if dry_run:
+    if offline:
+        qprint(f"Offline mode: skipped systemd operations for {service_name}")
+    elif dry_run:
         qprint(f"DRY-RUN: systemctl daemon-reload && systemctl enable --now {service_name}")
     else:
         try:
@@ -421,6 +416,11 @@ def parse_args():
     parser.add_argument("--delete-users", nargs="*", default=[], help="Delete specified user accounts")
     parser.add_argument("--remove-home", action="store_true", help="When deleting users, remove home directories (-r)")
     parser.add_argument("--dry-run", action="store_true", help="Show actions without executing")
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Generate SSH configuration without starting or reloading services",
+    )
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress informational output")
     return parser.parse_args()
 
@@ -588,8 +588,6 @@ def main():
             # Keep port 22 behavior from /etc/ssh/sshd_config and only add IPv4 serial listeners in the drop-in.
             primary_address_family = "any"
             primary_serial_ports_ipv4_only = True
-        # Install dispatch wrapper
-        install_dispatch_wrapper(repo_dir, dry_run=args.dry_run)
         # If secondary sshd is enabled, split the port range
         if getattr(args, "enable_second_sshd", False):
             total = (args.end - args.start + 1)
@@ -643,6 +641,7 @@ def main():
                     service_name=args.second_sshd_service,
                     group=group,
                     dry_run=args.dry_run,
+                    offline=args.offline,
                 )
             else:
                 qprint("No secondary range required after split.")
@@ -657,8 +656,11 @@ def main():
                 serial_ports_ipv4_only=primary_serial_ports_ipv4_only,
             )
             write_dropin(config_text, dropin_path, print_only=False, dry_run=args.dry_run)
-        # Reload sshd
-        reload_sshd(dry_run=args.dry_run)
+        # Reload sshd only on a live system.
+        if args.offline:
+            qprint("Offline mode: skipping sshd reload")
+        else:
+            reload_sshd(dry_run=args.dry_run)
         return
 
 
