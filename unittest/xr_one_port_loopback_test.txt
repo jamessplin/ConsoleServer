@@ -1,0 +1,126 @@
+XR17V35x Multi-Port Loopback Test Guide
+========================================
+
+Complete 24-Port Validation
+---------------------------
+
+Run both commands to test all 24 ports with hardware flow control disabled and
+then with RTS/CTS signal verification and hardware flow control enabled:
+
+    ./xr_one_port_loopback_test.sh -p 0-23 -j -d 30
+    ./xr_one_port_loopback_test.sh -p 0-23 -c -j -d 30
+
+To run the second test only if all ports pass the first test:
+
+    ./xr_one_port_loopback_test.sh -p 0-23 -j -d 30 &&
+    ./xr_one_port_loopback_test.sh -p 0-23 -c -j -d 30
+
+
+Script
+------
+
+    xr_one_port_loopback_test.sh
+
+Each selected serial connector must have TX connected to RX.
+
+For hardware flow-control testing with the -c option, the connector must also
+have RTS connected to CTS. You do not need to disconnect the RTS/CTS connection
+during the test.
+
+
+Basic TX/RX Loopback Testing
+----------------------------
+
+Test specific ports sequentially:
+
+    ./xr_one_port_loopback_test.sh -p 0,1,2 -d 10
+
+Test a range sequentially:
+
+    ./xr_one_port_loopback_test.sh -p 0-7 -d 10
+
+Test all 24 ports in parallel:
+
+    ./xr_one_port_loopback_test.sh -p 0-23 -j -d 30
+
+Automatically discover and test every available XR port:
+
+    ./xr_one_port_loopback_test.sh -p all -j -d 30
+
+Run selected ports continuously:
+
+    ./xr_one_port_loopback_test.sh -p 0-23 -d endless
+
+Endless multi-port testing automatically uses parallel execution. Press Ctrl-C
+once to stop the tests and grade their results.
+
+
+RTS/CTS Hardware Flow-Control Testing
+--------------------------------------
+
+Test XR0 with TX/RX and RTS/CTS loopbacks:
+
+    ./xr_one_port_loopback_test.sh -p 0 -c -d 10
+
+With -c, the script performs these checks:
+
+1. Configures the port for the selected baud rate, 8N1, raw mode, and no
+   software flow control.
+2. Verifies the physical TX-to-RX data loopback.
+3. Toggles RTS and verifies that CTS follows every asserted and deasserted
+   transition.
+4. Enables RTS/CTS hardware flow control and runs linux-serial-test.
+
+Test hardware flow control on multiple ports in parallel:
+
+    ./xr_one_port_loopback_test.sh -p 0-23 -c -j -d 30
+
+Exercise RTS/CTS backpressure by delaying reads:
+
+    ./xr_one_port_loopback_test.sh -p 0 -c -l 250 -w 64 -a 10 -d 10
+
+Run the hardware flow-control test continuously:
+
+    ./xr_one_port_loopback_test.sh -p 0 -c -d endless
+
+Omit -c to run the original TX/RX-only test with hardware flow control
+disabled.
+
+
+Important Options
+-----------------
+
+    -p PORTS       Port list, range, device, or all
+    -b BAUD        Baud rate; default is 115200
+    -d DURATION    Test duration in seconds, endless, or 0
+    -w BYTES       Bytes sent by each linux-serial-test write
+    -a MS          Delay between writes in milliseconds
+    -c             Verify RTS/CTS wiring and enable hardware flow control
+    -l MS          Delay reads to exercise RTS/CTS backpressure
+    -j             Test selected ports in parallel
+    -h             Display the complete command help
+
+
+Result Interpretation
+---------------------
+
+Example multi-port summary:
+
+    ========== PER-PORT RESULTS ==========
+      /dev/ttyXR0      PASS
+      /dev/ttyXR1      PASS
+      /dev/ttyXR2      FAIL (exit 1)
+      Passed: 2
+      Failed: 1
+    OVERALL RESULT: FAIL
+
+A port passes only when its configuration, basic data loopback, optional
+RTS/CTS signal test, and linux-serial-test checks all pass.
+
+The message below is expected with this XR17V35x driver and is not, by itself,
+a test failure:
+
+    Error setting RS-232 mode: Inappropriate ioctl for device
+
+It indicates that the driver does not implement the RS-485-mode ioctl attempted
+by linux-serial-test.
