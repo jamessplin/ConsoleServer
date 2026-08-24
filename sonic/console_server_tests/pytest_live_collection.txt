@@ -1,0 +1,51 @@
+tests/test_cli_availability.py::test_tp_cli_001_root_commands
+tests/test_cli_availability.py::test_tp_cli_002_nested_help
+tests/test_cli_availability.py::test_tp_cli_003_configuration_privilege
+tests/test_connection.py::test_connect_negative_cases
+tests/test_connection.py::test_stub_connection_behavior
+tests/test_connection.py::test_tp_conn_001_through_005_live_manual
+tests/test_group_config.py::test_tp_grp_001_create_group
+tests/test_group_config.py::test_tp_grp_002_replace_complete_definition
+tests/test_group_config.py::test_tp_grp_003_all_lines
+tests/test_group_config.py::test_tp_grp_004_repeat_definition
+tests/test_group_config.py::test_tp_grp_005_delete_group
+tests/test_group_config.py::test_group_negative_cases
+tests/test_invalid_port.py::test_invalid_port_inputs_do_not_change_visible_state[config console-server port baudrate 0 9600]
+tests/test_invalid_port.py::test_invalid_port_inputs_do_not_change_visible_state[config console-server port baudrate 999 9600]
+tests/test_invalid_port.py::test_invalid_port_inputs_do_not_change_visible_state[config console-server port baudrate 1 12345]
+tests/test_invalid_port.py::test_invalid_port_inputs_do_not_change_visible_state[config console-server port parity 1 invalid]
+tests/test_invalid_port.py::test_invalid_port_inputs_do_not_change_visible_state[config console-server port mode 1 invalid]
+tests/test_invalid_port.py::test_invalid_port_inputs_do_not_change_visible_state[config console-server port idle-timeout 1 86401]
+tests/test_persistence.py::test_tp_pers_001_config_save
+tests/test_persistence.py::test_tp_pers_003_service_restart
+tests/test_persistence.py::test_tp_pers_002_and_004_reboot_manual
+tests/test_port_config.py::test_port_configuration[TP-PCFG-001-baudrate-9600]
+tests/test_port_config.py::test_port_configuration[TP-PCFG-002-databits-8]
+tests/test_port_config.py::test_port_configuration[TP-PCFG-003-parity-none]
+tests/test_port_config.py::test_port_configuration[TP-PCFG-004-stopbits-1]
+tests/test_port_config.py::test_port_configuration[TP-PCFG-005-flowcontrol-none]
+tests/test_port_config.py::test_port_configuration[TP-PCFG-006-mode-shared]
+tests/test_port_config.py::test_port_configuration[TP-PCFG-007-mode-exclusive]
+tests/test_port_config.py::test_port_configuration[TP-PCFG-008-max-clients-4]
+tests/test_port_config.py::test_port_configuration[TP-PCFG-009-idle-timeout-600]
+tests/test_port_config.py::test_port_configuration[TP-PCFG-010-idle-timeout-0]
+tests/test_port_config.py::test_port_configuration[TP-PCFG-011-label-TEST-CONSOLE-1]
+tests/test_port_config.py::test_tp_pcfg_012_no_op_update
+tests/test_port_display.py::test_tp_port_001_show_all_console_lines
+tests/test_port_display.py::test_tp_port_002_tcp_port_sequence
+tests/test_port_display.py::test_tp_port_003_labels_are_unique
+tests/test_product_info.py::test_tp_prod_001_show_product_information
+tests/test_product_info.py::test_tp_prod_002_repeat_is_consistent
+tests/test_product_info.py::test_tp_prod_003_values_are_valid
+tests/test_sessions.py::test_tp_ses_001_show_sessions_command
+tests/test_sessions.py::test_tp_ses_005_internal_fields_hidden
+tests/test_sessions.py::test_stub_session_shapes
+tests/test_sessions.py::test_tp_ses_002_through_007_live_manual
+tests/test_usability.py::test_tp_use_001_repeated_show_commands
+tests/test_usability.py::test_tp_use_002_concurrent_session_display
+tests/test_usability.py::test_tp_use_004_clear_errors
+tests/test_user_config.py::test_user_commands_stub_suite
+tests/test_user_config.py::test_user_live_lifecycle
+tests/test_user_config.py::test_user_negative_cases_preserve_visible_state
+
+49 tests collected in 0.02s

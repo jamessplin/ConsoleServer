@@ -144,7 +144,7 @@ These are platform or product values, not ordinary user-configurable fields.
 2. Use ConfigDB as the persistent authority for SONiC-owned configuration.
 3. Keep Linux/NSS as the only authority for accounts and passwords.
 4. Use YANG and CVL for modeled ConfigDB configuration.
-5. Use public application interfaces instead of internal implementation details.
+5. Use supported, documented application interfaces rather than accessing private implementation components directly.
 6. Generate runtime configuration deterministically and atomically.
 7. Avoid duplicating live session state in STATE_DB.
 8. Avoid storing per-line TCP ports while fixed sequential mapping is guaranteed.
@@ -343,7 +343,7 @@ The two services shall not run simultaneously because they would compete for the
 | Ports | ConfigDB values override SONiC-owned fields in matching bootstrap lines |
 | Groups | ConfigDB groups replace bootstrap group definitions |
 | Managed users | Apply ConfigDB role/group metadata only when the Linux/NSS user exists |
-| Unmanaged bootstrap users | Preserve, subject to valid group membership |
+| Users created outside ConfigDB | Preserve the existing Linux account, password, and group membership unchanged |
 | Passwords | Never read, copied, generated, modified, emitted, or logged |
 | Product information | Not retrieved as part of startup generation in the current implementation |
 
@@ -383,7 +383,7 @@ validate complete candidate group
     ↓
 apply one runtime group update
     ↓
-write parent and membership rows sequentially
+write ConfigDB group parent and membership rows sequentially
     ↓
 compensate runtime if ConfigDB write fails
 ```

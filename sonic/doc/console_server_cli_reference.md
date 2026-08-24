@@ -1,224 +1,258 @@
-# SONiC Console-Server CLI Reference
+# SONiC ConsoleServer CLI Reference
 
-This section follows the structure used by the SONiC command reference: command description, usage, parameters/options, and examples.
+This document describes the SONiC ConsoleServer commands, their parameters, update semantics, and representative output.
 
-All configuration commands require root privilege. Prefix them with `sudo` or use a root shell. Show and connect commands do not require `sudo` unless restricted by the deployment's local access policy.
+All configuration commands require root privilege. Prefix them with `sudo` or run them from a root shell. Show and connect commands do not require `sudo` unless restricted by the deployment's access policy.
 
-All commands and values are case-sensitive unless the command explicitly accepts case-insensitive choices.
+Commands, labels, user names, and group names are case-sensitive unless stated otherwise.
 
-## Console-server configuration commands
+## 1. Port Configuration Commands
 
-### config console-server port baudrate
+### 1.1 `config console-server port baudrate`
 
 Sets the baud rate of a console line.
 
-- Usage:
+**Usage**
 
 ```text
 config console-server port baudrate <port_number> <rate>
 ```
 
-- Parameters:
-  - `port_number`: Physical console line number.
-  - `rate`: Supported baud rate, for example `9600`, `19200`, `38400`, `57600`, or `115200`.
+**Parameters**
 
-- Example:
+- `port_number`: Physical console line number.
+- `rate`: Supported baud rate, such as `9600`, `19200`, `38400`, `57600`, or `115200`.
+
+**Example**
 
 ```bash
 admin@sonic:~$ sudo config console-server port baudrate 1 115200
 ```
 
-### config console-server port databits
+### 1.2 `config console-server port databits`
 
-Sets the number of data bits.
+Sets the number of data bits for a console line.
 
-- Usage:
+**Usage**
 
 ```text
 config console-server port databits <port_number> <bits>
 ```
 
-- Parameters:
-  - `port_number`: Physical console line number.
-  - `bits`: Supported data-bit value.
+**Parameters**
 
-- Example:
+- `port_number`: Physical console line number.
+- `bits`: Supported data-bit value.
+
+**Example**
 
 ```bash
 admin@sonic:~$ sudo config console-server port databits 1 8
 ```
 
-### config console-server port parity
+### 1.3 `config console-server port parity`
 
-Sets the parity mode.
+Sets the parity mode of a console line.
 
-- Usage:
+**Usage**
 
 ```text
 config console-server port parity <port_number> <parity>
 ```
 
-- Parameters:
-  - `port_number`: Physical console line number.
-  - `parity`: Supported parity mode, such as `none`, `odd`, or `even`.
+**Parameters**
 
-- Example:
+- `port_number`: Physical console line number.
+- `parity`: Supported parity mode, such as `none`, `odd`, or `even`.
+
+**Example**
 
 ```bash
 admin@sonic:~$ sudo config console-server port parity 1 none
 ```
 
-### config console-server port stopbits
+### 1.4 `config console-server port stopbits`
 
-Sets the number of stop bits.
+Sets the number of stop bits for a console line.
 
-- Usage:
+**Usage**
 
 ```text
 config console-server port stopbits <port_number> <bits>
 ```
 
-- Example:
+**Parameters**
+
+- `port_number`: Physical console line number.
+- `bits`: Supported stop-bit value.
+
+**Example**
 
 ```bash
 admin@sonic:~$ sudo config console-server port stopbits 1 1
 ```
 
-### config console-server port flowcontrol
+### 1.5 `config console-server port flowcontrol`
 
-Sets serial flow control.
+Sets serial flow control for a console line.
 
-- Usage:
+**Usage**
 
 ```text
 config console-server port flowcontrol <port_number> <mode>
 ```
 
-- Parameters:
-  - `mode`: Supported flow-control mode, such as `none` or `rtscts`.
+**Parameters**
 
-- Example:
+- `port_number`: Physical console line number.
+- `mode`: Supported flow-control mode, such as `none` or `rtscts`.
+
+**Example**
 
 ```bash
 admin@sonic:~$ sudo config console-server port flowcontrol 1 none
 ```
 
-### config console-server port mode
+### 1.6 `config console-server port mode`
 
 Sets the access mode of a console line.
 
-- Usage:
+**Usage**
 
 ```text
 config console-server port mode <port_number> <mode>
 ```
 
-- Parameters:
-  - `mode`: `shared` or `exclusive`.
+**Parameters**
 
-- Example:
+- `port_number`: Physical console line number.
+- `mode`: `shared` or `exclusive`.
+
+**Example**
 
 ```bash
 admin@sonic:~$ sudo config console-server port mode 1 shared
 ```
 
-### config console-server port max-clients
+### 1.7 `config console-server port max-clients`
 
-Sets the maximum number of simultaneous clients.
+Sets the maximum number of simultaneous clients allowed on a console line.
 
-- Usage:
+**Usage**
 
 ```text
 config console-server port max-clients <port_number> <count>
 ```
 
-- Example:
+**Parameters**
+
+- `port_number`: Physical console line number.
+- `count`: Maximum simultaneous client count supported by the product.
+
+**Example**
 
 ```bash
 admin@sonic:~$ sudo config console-server port max-clients 1 4
 ```
 
-### config console-server port idle-timeout
+### 1.8 `config console-server port idle-timeout`
 
 Sets the client idle timeout in seconds.
 
-- Usage:
+**Usage**
 
 ```text
 config console-server port idle-timeout <port_number> <seconds>
 ```
 
-- Parameters:
-  - `seconds`: `0..86400`. Value `0` disables the timeout.
+**Parameters**
 
-- Example:
+- `port_number`: Physical console line number.
+- `seconds`: `0..86400`; `0` disables the idle timeout.
+
+**Example**
 
 ```bash
 admin@sonic:~$ sudo config console-server port idle-timeout 1 600
 ```
 
-### config console-server port label
+### 1.9 `config console-server port label`
 
 Sets the unique label of a console line.
 
-- Usage:
+**Usage**
 
 ```text
 config console-server port label <port_number> <label>
 ```
 
-- Example:
+**Parameters**
+
+- `port_number`: Physical console line number.
+- `label`: Unique, case-sensitive line label.
+
+**Example**
 
 ```bash
 admin@sonic:~$ sudo config console-server port label 1 TOR-SWITCH-01
 ```
 
-Labels must be unique. Default labels use the form `COM<port_number>`.
+Default labels use the form `COM<port_number>`. A label already assigned to another line is rejected.
 
-### config console-server group add
+## 2. Group Configuration Commands
 
-Creates a group or replaces its role and complete port membership.
+### 2.1 `config console-server group add`
 
-- Usage:
+Creates a ConsoleServer group or replaces an existing group's role and complete port membership.
+
+**Usage**
 
 ```text
 config console-server group add <group_name> <port_list> [--role <role>]
 ```
 
-- Parameters:
-  - `group_name`: Console-server group name.
-  - `port_list`: `all`, a line, a range, or a comma-separated combination, for example `1-5,8,10-12`.
+**Parameters**
 
-- Options:
-  - `--role`: `admin`, `console_user`, or `operator`. Default: `console_user`.
+- `group_name`: ConsoleServer group name.
+- `port_list`: `all`, one line, one range, or a comma-separated combination such as `1-5,8,10-12`.
 
-- Example:
+**Options**
+
+- `--role`: `admin`, `console_user`, or `operator`. Default: `console_user`.
+
+**Example**
 
 ```bash
 admin@sonic:~$ sudo config console-server group add lab 1-5,8 --role console_user
 ```
 
-### config console-server group delete
+Running the command for an existing group replaces both its role and its complete membership. Ports omitted from the new `port_list` are removed from the group.
 
-Deletes a console-server group and its port membership metadata.
+### 2.2 `config console-server group delete`
 
-- Usage:
+Deletes a ConsoleServer group and its port-membership metadata.
+
+**Usage**
 
 ```text
 config console-server group delete <group_name>
 ```
 
-- Example:
+**Example**
 
 ```bash
 admin@sonic:~$ sudo config console-server group delete lab
 ```
 
-### config console-server user add
+## 3. User Configuration Commands
 
-Creates a user or updates an existing user's role, groups, or password.
+Linux/NSS is authoritative for user accounts and passwords. ConfigDB stores only non-secret ConsoleServer role and group metadata.
 
-- Usage:
+### 3.1 `config console-server user add`
+
+Creates a Linux/NSS user for ConsoleServer access or updates an existing user's ConsoleServer role, group membership, or password.
+
+**Usage**
 
 ```text
 config console-server user add <username> \
@@ -227,13 +261,14 @@ config console-server user add <username> \
     [--password <value> | --prompt-password]
 ```
 
-- Options:
-  - `--role`: `none`, `admin`, `console_user`, or `operator`.
-  - `--groups`: Comma-separated existing console-server groups.
-  - `--password`: Password for non-interactive automation. It may be visible in shell history and process arguments.
-  - `--prompt-password`: Prompt for hidden password input and confirmation.
+**Options**
 
-- Examples:
+- `--role`: `none`, `admin`, `console_user`, or `operator`.
+- `--groups`: Comma-separated list of existing ConsoleServer groups.
+- `--password`: Password for non-interactive use. The value may be visible in shell history and briefly visible to privileged process inspection.
+- `--prompt-password`: Prompts for hidden password entry and confirmation.
+
+**Examples**
 
 ```bash
 admin@sonic:~$ sudo config console-server user add operator1 \
@@ -246,54 +281,62 @@ admin@sonic:~$ sudo config console-server user add operator1 \
 admin@sonic:~$ sudo config console-server user add operator1 --groups ops
 ```
 
-For an existing user, omitted role and groups are preserved. For a new user, an omitted role defaults to `none`.
+For an existing user:
 
-### config console-server user password
+- omitted `--role` preserves the existing ConsoleServer role;
+- omitted `--groups` preserves the existing ConsoleServer group memberships;
+- omitting a password preserves the current Linux/NSS password.
 
-Changes the password of an existing user.
+For a new user, an omitted role defaults to `none`.
 
-- Usage:
+### 3.2 `config console-server user password`
+
+Changes the Linux/NSS password of an existing ConsoleServer user.
+
+**Usage**
 
 ```text
 config console-server user password <username> \
     [--password <value> | --prompt-password]
 ```
 
-- Example:
+**Example**
 
 ```bash
 admin@sonic:~$ sudo config console-server user password operator1 --prompt-password
 ```
 
-### config console-server user delete
+The command changes only password state. ConsoleServer role and group metadata remain unchanged.
 
-Deletes a console-server user through the independent application's user-management interface and removes its ConfigDB metadata.
+### 3.3 `config console-server user delete`
 
-- Usage:
+Deletes the Linux/NSS user and removes the associated non-secret ConsoleServer metadata from ConfigDB.
+
+**Usage**
 
 ```text
 config console-server user delete <username>
 ```
 
-- Example:
+**Example**
 
 ```bash
 admin@sonic:~$ sudo config console-server user delete operator1
 ```
 
-## Console-server show commands
+## 4. Show Commands
 
-### show console-server port
+### 4.1 `show console-server port`
 
 Displays configured console lines. The TCP port is derived from the product base port and line number.
 
-- Usage:
+**Usage**
 
 ```text
 show console-server port
 ```
 
-- Example:
+**Example**
 
 ```text
 admin@sonic:~$ show console-server port
@@ -302,23 +345,17 @@ Line  TCP Port  Label  Mode    Max Clients  Idle Timeout  Baudrate  Databits  St
 1     35001     COM1   shared  4            600           115200    8         1         none    none
 ```
 
-The TCP port is calculated as:
+### 4.2 `show console-server group`
 
-```text
-tcp_port = base_port + line
-```
+Displays configured ConsoleServer groups, roles, and permitted console lines.
 
-### show console-server group
-
-Displays configured groups, roles, and permitted console lines.
-
-- Usage:
+**Usage**
 
 ```text
 show console-server group
 ```
 
-- Example:
+**Example**
 
 ```text
 admin@sonic:~$ show console-server group
@@ -327,17 +364,17 @@ Group  Role          Ports
 lab    console_user  1,2,3,4
 ```
 
-### show console-server user
+### 4.3 `show console-server user`
 
-Displays non-secret user metadata.
+Displays non-secret ConsoleServer user metadata.
 
-- Usage:
+**Usage**
 
 ```text
 show console-server user
 ```
 
-- Example:
+**Example**
 
 ```text
 admin@sonic:~$ show console-server user
@@ -346,41 +383,41 @@ Username   Role      Groups
 operator1  operator  lab
 ```
 
-Passwords are never displayed.
+Passwords and password hashes are never displayed.
 
-### show console-server sessions
+### 4.4 `show console-server sessions`
 
-Displays active console-server clients.
+Displays active ConsoleServer clients reported by the running ConsoleServer.
 
-- Usage:
+**Usage**
 
 ```text
 show console-server sessions
 ```
 
-- Example:
+**Example**
 
 ```text
 admin@sonic:~$ show console-server sessions
-Line  Mode    User   Role    Client IP      Client Port  Idle Timeout  Time Left
-----  ------  -----  ------  -------------  -----------  ------------  ---------
-1     shared  admin  writer  10.19.252.103  57050        600           477
-1     shared  admin  writer  10.19.252.103  53634        600           518
+Line  Mode    User   Role      Client IP      Client Port  Idle Timeout  Time Left
+----  ------  -----  --------  -------------  -----------  ------------  ---------
+1     shared  admin  writer    10.19.252.103  57050        600           477
+1     shared  admin  observer  10.19.252.104  53634        600           518
 ```
 
-Idle Timeout and Time Left are displayed in seconds. Only active clients are shown.
+Idle Timeout and Time Left are displayed in seconds. Each active client is displayed as one row. Lines without active clients are omitted.
 
-### show console-server product-info
+### 4.5 `show console-server product-info`
 
-Displays static product configuration and limits.
+Displays read-only ConsoleServer product limits.
 
-- Usage:
+**Usage**
 
 ```text
 show console-server product-info
 ```
 
-- Example:
+**Example**
 
 ```text
 admin@sonic:~$ show console-server product-info
@@ -392,39 +429,47 @@ Max Users  : 16
 Max Groups : 16
 ```
 
-The command normally reads `CONSOLE_SERVER_PRODUCT_INFO|global` from ConfigDB. If the entry is missing or invalid, it retrieves product information from the independent application and attempts to cache it.
+## 5. Connect Commands
 
-## Console-server connect commands
-
-### connect console-server line
+### 5.1 `connect console-server line`
 
 Connects interactively to a physical console line.
 
-- Usage:
+**Usage**
 
 ```text
 connect console-server line <port_number>
 ```
 
-- Example:
+**Parameters**
+
+- `port_number`: Physical console line number.
+
+**Example**
 
 ```bash
 admin@sonic:~$ connect console-server line 1
 ```
 
-The child connection process inherits the terminal's stdin, stdout, and stderr. Use the independent application's configured escape sequence to disconnect.
+The command validates the line and starts the supported interactive connection path. The connection process inherits the terminal's standard input, output, and error streams.
 
-### connect console-server label
+Use the ConsoleServer connection escape sequence to disconnect.
+
+### 5.2 `connect console-server label`
 
 Connects interactively to the line whose configured label exactly matches the supplied label.
 
-- Usage:
+**Usage**
 
 ```text
 connect console-server label <label>
 ```
 
-- Example:
+**Parameters**
+
+- `label`: Existing case-sensitive ConsoleServer line label.
+
+**Example**
 
 ```bash
 admin@sonic:~$ connect console-server label TOR-SWITCH-01
@@ -432,10 +477,14 @@ admin@sonic:~$ connect console-server label TOR-SWITCH-01
 
 Label lookup is exact and case-sensitive.
 
-## Saving configuration
+## 6. Saving Configuration
 
 Use the standard SONiC command to persist ConfigDB:
 
 ```bash
 admin@sonic:~$ sudo config save
 ```
+
+No ConsoleServer-specific save command is required.
+
+`/run/seriald/config.json` is a generated startup snapshot and is not used as the persistence source for `config save`.

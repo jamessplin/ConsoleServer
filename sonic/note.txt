@@ -509,3 +509,122 @@ set -o pipefail
 
 make target/sonic-marvell-prestera-arm64.bin \
     2>&1 | tee build-sonic-marvell-prestera-arm64.log
+
+
+
+rm -f target/debs/trixie/console-server_*.deb
+
+make target/debs/trixie/console-server_1.0.0_all.deb
+
+rm -rf /tmp/console-server-deb
+mkdir -p /tmp/console-server-deb
+
+dpkg-deb -x \
+    target/debs/trixie/console-server_1.0.0_all.deb \
+    /tmp/console-server-deb
+
+Verify that the packaged script contains our new handling:
+
+grep -n -A20 -B5 \
+    'enable_service_offline\|if offline:' \
+    /tmp/console-server-deb/usr/local/bin/setup_ssh_dispatch.py
+
+We should see:
+
+enable_service_offline(...)
+...
+if offline:
+    enable_service_offline(...)
+    Offline mode: skipped starting ...
+
+
+
+[james@tpt-vm-build01 Marvell_SDK]$ git diff
+diff --git a/buildroot/hyve-solutions/board/marvell/hwa024m_hm/linux.config b/buildroot/hyve-solutions/board/marvell/hwa024m_hm/linux.config
+index 1428d06..bbe628a 100644
+--- a/buildroot/hyve-solutions/board/marvell/hwa024m_hm/linux.config
++++ b/buildroot/hyve-solutions/board/marvell/hwa024m_hm/linux.config
+@@ -3013,7 +3013,7 @@ CONFIG_SERIAL_8250_16550A_VARIANTS=y
+ CONFIG_SERIAL_8250_CONSOLE=y
+ CONFIG_SERIAL_8250_DMA=y
+ CONFIG_SERIAL_8250_PCI=y
+-CONFIG_SERIAL_8250_EXAR=y
++CONFIG_SERIAL_8250_EXAR=n
+ CONFIG_SERIAL_8250_NR_UARTS=4
+ CONFIG_SERIAL_8250_RUNTIME_UARTS=4
+ CONFIG_SERIAL_8250_EXTENDED=y
+
+
+
+setenv usbboot 'usb reset; sleep 2; fatload usb 0:1 0x08000000 Image; fatload usb 0:1 0x07000000 hyve_hwa024m_hm.dtb; fatload usb 0:1 0x20000000 rootfs.cpio.gz; setenv rdsize ${filesize}; setenv bootargs "console=ttyS0,115200 earlycon"; booti 0x08000000 0x20000000:${rdsize} 0x07000000'
+run usbboot
+
+usb reset
+fatload usb 0:1 0x08000000 Image
+fatload usb 0:1 0x07000000 hyve_hwa024m_hm.dtb
+fatload usb 0:1 0x20000000 rootfs.cpio.gz
+setenv rdsize ${filesize}
+setenv bootargs 'console=ttyS0,115200 earlycon'
+booti 0x08000000 0x20000000:${rdsize} 0x07000000
+
+ifconfig end1 10.19.252.49 netmask 255.255.255.0 up
+scp bmc@10.19.252.103:/home/bmc/james/tmp/xr17v35x.ko  /lib/modules/6.12.51/updates/
+scp bmc@10.19.252.103:/home/bmc/james/tmp/xr_one_port_loopback_test.sh  /tmp/xr_one_port_loopback_test.sh
+chmod +x /tmp/xr_one_port_loopback_test.sh
+
+rmmod xr17v35x
+echo -n "0001:01:00.0" > /sys/bus/pci/drivers/exar_serial/unbind
+echo -n "0002:01:00.0" > /sys/bus/pci/drivers/exar_serial/unbind
+dmesg -C
+modprobe xr17v35x
+lspci -k -s 0001:01:00.0
+lspci -k -s 0002:01:00.0
+ls -l /sys/bus/pci/drivers/xrserial/
+ls -l /dev/ttyXR*
+dmesg
+
+chmod +x xr_one_port_loopback_test.sh
+
+./xr_one_port_loopback_test.sh \
+    -p /dev/ttyXR0 \
+    -b 115200 \
+    -d 10
+
+
+# stty -F /dev/ttyXR0 115200 cs8 -cstopb -parenb \
+>     clocal -crtscts -ixon -ixoff raw -echo
+
+stty -F /dev/ttyXR0 \
+    115200 cs8 -cstopb -parenb \
+    clocal -hupcl \
+    -crtscts -ixon -ixoff \
+    raw -echo -iexten
+
+stty -F /dev/ttyXR0 115200 cs8 -cstopb -parenb  clocal -crtscts -ixon -ixoff raw -echo
+# stty -F /dev/ttyXR0
+speed 115200 baud; line = 0;
+min = 1; time = 0;
+-brkint -icrnl -imaxbel
+-opost
+-isig -icanon -echo
+
+# stty -F /dev/ttyXR1
+speed 9600 baud; line = 0;
+-brkint -imaxbel
+
+linux-serial-test -p /dev/ttyXR0 -b 115200 -s -e -o 10 -i 11
+
+
+https://dev.azure.com/techdatacorp/diag_system/_git/Marvell_SDK?path=/buildroot/2026_02_x/hyve-solutions/package/serial_xr17v35x
+james@oob_rootfs:~/a_git/Marvell_SDK/hwa024m_hm$ make serial_xr17v35x-rebuild
+
+
+# buildroot to build xr17v35x for local debuuging
+james@oob_rootfs:~/a_git/Marvell_SDK/hwa024m_hm$cp ~/a_git/diag_driver/xr17/xr17-lnx2.6.32-and-newer-pak_ver2.6/xr17v35x.c \
+  output/build/serial_xr17v35x-*/xr17/xr17-lnx2.6.32-and-newer-pak_ver2.6/xr17v35x.c
+
+james@oob_rootfs:~/a_git/Marvell_SDK/hwa024m_hm$make serial_xr17v35x-rebuild
+
+james@oob_rootfs:~/a_git/Marvell_SDK/hwa024m_hm$ ls -l  ~/a_git/Marvell_SDK/hwa024m_hm/output/target/lib/modules/6.12.51/updates/
+xr17v35x.ko
+-rw-r--r--. 1 james james 40408 Aug 19 09:13 /home/james/a_git/Marvell_SDK/hwa024m_hm/output/target/lib/modules/6.12.51/updates/xr17v35x.ko
